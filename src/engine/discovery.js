@@ -1,11 +1,23 @@
-// New-pair listener. Subscribes to the DEX factory and emits every freshly
-// created pool/pair the moment it lands on-chain. This is the "sniping" core:
-// we hear about a launch as it happens, then match it against the target ticker.
+// Resilient new-pair listener. From the moment a snipe is armed until it is
+// cancelled or fires, this must NEVER go deaf. It is built to survive RPC
+// hiccups, WebSocket drops, and machine sleep/wake without missing a launch.
+//
+// Design:
+//   • Backbone = HTTP log polling. Each tick scans the factory for PoolCreated
+//     events from `fromBlock` to the latest block, then advances `fromBlock`.
+//     Because `fromBlock` persists across ticks, any gap (network blip, sleep)
+//     is caught up on the next successful scan — no launch slips through.
+//     This works on the rate-limited public RPC, which cannot do eth_subscribe.
+//   • Accelerator = optional WebSocket subscription (private endpoints only).
+//     Lower latency, but treated as best-effort; the poller is the guarantee.
+//   • Dedup by pool address so the WS and poll paths never double-fire.
+//   • The loop only ends when the returned stop() is called. Errors back off
+//     and retry — they do not kill the listener.
 
 import { getContract } from 'viem';
 import { UNIV3_FACTORY_ABI, UNIV2_FACTORY_ABI, ERC20_ABI } from './abis.js';
 
-const NATIVE_LIKE = new Set(); // filled from config.wrappedNative at runtime
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The token in a new pair that ISN'T the base asset (WETH) is the "new" token.
 function pickNewToken(token0, token1, wrappedNative) {
@@ -16,52 +28,134 @@ function pickNewToken(token0, token1, wrappedNative) {
   return token1;
 }
 
-export function startPairListener(publicClient, cfg, onNewToken, onError) {
+// clients: { http, ws }  — http is REQUIRED (the reliable backbone);
+//                          ws is OPTIONAL (a low-latency accelerator).
+// log:     optional (level, msg) sink for heartbeat/reconnect breadcrumbs.
+export function startPairListener(clients, cfg, onNewToken, onError, log) {
+  const httpClient = clients.http || clients; // tolerate an old-style single client
+  const wsClient = clients.ws || null;
+
   const kind = cfg.dex.kind;
   const factory = cfg.dex.factory;
   const wrapped = cfg.chain.wrappedNative;
-
   const abi = kind === 'uniswap-v2' ? UNIV2_FACTORY_ABI : UNIV3_FACTORY_ABI;
   const eventName = kind === 'uniswap-v2' ? 'PairCreated' : 'PoolCreated';
+  const eventItem = abi.find((x) => x.type === 'event' && x.name === eventName);
 
-  const unwatch = publicClient.watchContractEvent({
-    address: factory,
-    abi,
-    eventName,
-    onError: (e) => onError?.(e),
-    onLogs: async (logs) => {
-      for (const log of logs) {
-        try {
-          const { token0, token1 } = log.args;
-          const poolOrPair = log.args.pool ?? log.args.pair;
-          const feeTier = log.args.fee ?? cfg.dex.defaultFeeTier;
-          const tokenAddr = pickNewToken(token0, token1, wrapped);
+  const pollMs = Number(cfg.discovery?.pollMs ?? 3000);
+  const heartbeatMs = Number(cfg.discovery?.heartbeatMs ?? 20000);
+  const maxSpan = BigInt(cfg.discovery?.maxBlockSpan ?? 2000); // cap getLogs range per scan
 
-          // Read the token's symbol so we can match by ticker.
-          let symbol = '?';
-          let decimals = 18;
-          try {
-            const token = getContract({ address: tokenAddr, abi: ERC20_ABI, client: publicClient });
-            [symbol, decimals] = await Promise.all([token.read.symbol(), token.read.decimals()]);
-          } catch { /* token may not implement symbol(); leave as ? */ }
+  const seen = new Set(); // pool addresses already emitted (dedup across ws+poll)
+  let stopped = false;
+  let fromBlock = null; // next block to scan from
+  let lastHeartbeat = 0;
+  let consecutiveErrors = 0;
+  let unwatchWs = null;
 
-          onNewToken({
-            token: tokenAddr,
-            symbol: String(symbol),
-            decimals: Number(decimals),
-            pool: poolOrPair,
-            feeTier: Number(feeTier),
-            token0,
-            token1,
-            txHash: log.transactionHash,
-            blockNumber: log.blockNumber
-          });
-        } catch (e) {
-          onError?.(e);
-        }
+  async function handleLog(l) {
+    const { token0, token1 } = l.args;
+    const poolOrPair = l.args.pool ?? l.args.pair;
+    if (!poolOrPair) return;
+    const key = String(poolOrPair).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const feeTier = l.args.fee ?? cfg.dex.defaultFeeTier;
+    const tokenAddr = pickNewToken(token0, token1, wrapped);
+
+    // Read the token's symbol so we can match by ticker.
+    let symbol = '?';
+    let decimals = 18;
+    try {
+      const token = getContract({ address: tokenAddr, abi: ERC20_ABI, client: httpClient });
+      [symbol, decimals] = await Promise.all([token.read.symbol(), token.read.decimals()]);
+    } catch { /* token may not implement symbol(); leave as ? */ }
+
+    onNewToken({
+      token: tokenAddr,
+      symbol: String(symbol),
+      decimals: Number(decimals),
+      pool: poolOrPair,
+      feeTier: Number(feeTier),
+      token0,
+      token1,
+      txHash: l.transactionHash,
+      blockNumber: l.blockNumber
+    });
+  }
+
+  function maybeHeartbeat(block) {
+    const now = Date.now();
+    if (now - lastHeartbeat >= heartbeatMs) {
+      lastHeartbeat = now;
+      log?.('debug', `listening… scanned to block ${block}${wsClient ? ' (ws+poll)' : ' (poll)'}`);
+    }
+  }
+
+  async function pollOnce() {
+    const latest = await httpClient.getBlockNumber();
+    // First tick: start from *now*. We snipe launches that happen after arming,
+    // not historical pairs, so we don't backfill the chain's whole history.
+    if (fromBlock === null) fromBlock = latest + 1n;
+    if (latest < fromBlock) { maybeHeartbeat(latest); return; }
+
+    let toBlock = latest;
+    if (toBlock - fromBlock + 1n > maxSpan) toBlock = fromBlock + maxSpan - 1n;
+
+    const logs = await httpClient.getLogs({ address: factory, event: eventItem, fromBlock, toBlock });
+    for (const l of logs) {
+      if (stopped) return;
+      await handleLog(l);
+    }
+    fromBlock = toBlock + 1n; // advance; leftover span (if capped) is caught next tick
+    consecutiveErrors = 0;
+    maybeHeartbeat(toBlock);
+  }
+
+  async function pollLoop() {
+    while (!stopped) {
+      try {
+        await pollOnce();
+        if (!stopped) await sleep(pollMs);
+      } catch (e) {
+        consecutiveErrors++;
+        onError?.(e);
+        // Exponential backoff capped at 30s so a rate-limit storm or an RPC
+        // outage doesn't hammer the endpoint — but we always keep retrying.
+        const backoff = Math.min(pollMs * 2 ** Math.min(consecutiveErrors, 5), 30000);
+        if (!stopped) await sleep(backoff);
       }
     }
-  });
+  }
 
-  return unwatch; // call to stop listening
+  // Optional WS accelerator (private endpoints only). Best-effort: if it errors
+  // or drops, the poller still guarantees delivery, so we just log and lean on it.
+  function attachWs() {
+    if (!wsClient) return;
+    try {
+      unwatchWs = wsClient.watchContractEvent({
+        address: factory,
+        abi,
+        eventName,
+        onError: (e) => { onError?.(e); },
+        onLogs: async (logs) => {
+          for (const l of logs) {
+            if (stopped) return;
+            try { await handleLog(l); } catch (e) { onError?.(e); }
+          }
+        }
+      });
+    } catch (e) {
+      onError?.(e);
+    }
+  }
+
+  attachWs();
+  pollLoop();
+
+  return function stop() {
+    stopped = true;
+    if (unwatchWs) { try { unwatchWs(); } catch {} unwatchWs = null; }
+  };
 }

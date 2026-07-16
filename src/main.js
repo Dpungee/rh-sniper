@@ -81,3 +81,7 @@ ipcMain.handle('snipe:disarm', () => {
   ensureSniper().disarm();
   return { ok: true };
 });
+
+ipcMain.handle('snipe:pending', () => {
+  return { pending: ensureSniper().pendingSnipe() };
+});

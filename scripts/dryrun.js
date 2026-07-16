@@ -2,7 +2,7 @@
 // reads chain id + latest block, and (if a factory is configured) subscribes to
 // new-pair events for a short window. NEVER sends a transaction.
 
-import { loadConfig, makeHttpPublicClient, makePublicClient } from '../src/engine/chain.js';
+import { loadConfig, makeHttpPublicClient, makeWsClient } from '../src/engine/chain.js';
 import { startPairListener } from '../src/engine/discovery.js';
 
 const WATCH_SECONDS = Number(process.argv[2] || 30);
@@ -27,12 +27,13 @@ async function main(){
     return;
   }
 
-  console.log(`\nWatching ${cfg.dex.kind} factory ${cfg.dex.factory} for ${WATCH_SECONDS}s...`);
-  const ws = makePublicClient(cfg, { preferWs: true });
+  const ws = makeWsClient(cfg);
+  console.log(`\nWatching ${cfg.dex.kind} factory ${cfg.dex.factory} for ${WATCH_SECONDS}s (${ws ? 'live WS + polling' : 'polling — no private WS endpoint'})...`);
   let count = 0;
-  const unwatch = startPairListener(ws, cfg,
+  const unwatch = startPairListener({ http, ws }, cfg,
     (t)=>{ count++; console.log(`  NEW PAIR  $${t.symbol}  token=${t.token}  pool=${t.pool}  fee=${t.feeTier}`); },
-    (e)=> console.log(`  listener error: ${e.shortMessage || e.message}`)
+    (e)=> console.log(`  listener hiccup (auto-retrying): ${e.shortMessage || e.message}`),
+    (level, msg)=> console.log(`  [${level}] ${msg}`)
   );
   await new Promise(r=>setTimeout(r, WATCH_SECONDS*1000));
   try{ unwatch(); }catch{}

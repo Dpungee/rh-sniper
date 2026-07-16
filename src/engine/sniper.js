@@ -3,24 +3,51 @@
 // Emits structured events so the UI can render a live log.
 
 import { EventEmitter } from 'node:events';
-import { makePublicClient, makeHttpPublicClient, makeWalletClient, loadConfig } from './chain.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { makeHttpPublicClient, makeWsClient, makeWalletClient, loadConfig } from './chain.js';
 import { startPairListener } from './discovery.js';
 import { tickerMatches, normalizeTicker } from './resolver.js';
 import { passesSafety } from './safety.js';
 import { buildAndSendBuy } from './swap.js';
 import { buildAndSendBuyUniversal } from './swapUniversal.js';
 
+// A pending (armed) snipe is persisted here so that if the app is closed or the
+// machine restarts mid-watch, unlocking the wallet automatically resumes it.
+// Only non-secret params live here — never the key.
+const PENDING_PATH = path.join(os.homedir(), '.rh-sniper', 'pending.json');
+
+function writePending(params) {
+  try {
+    fs.mkdirSync(path.dirname(PENDING_PATH), { recursive: true });
+    fs.writeFileSync(PENDING_PATH, JSON.stringify({ ...params, savedAt: Date.now() }, null, 2), { mode: 0o600 });
+  } catch { /* best-effort */ }
+}
+function readPending() {
+  try { return JSON.parse(fs.readFileSync(PENDING_PATH, 'utf8')); } catch { return null; }
+}
+function clearPending() {
+  try { fs.rmSync(PENDING_PATH, { force: true }); } catch { /* best-effort */ }
+}
+
 export class Sniper extends EventEmitter {
   constructor() {
     super();
     this.cfg = loadConfig();
-    this.wsClient = makePublicClient(this.cfg, { preferWs: true });
-    this.httpClient = makeHttpPublicClient(this.cfg);
+    this.httpClient = makeHttpPublicClient(this.cfg); // reliable polling backbone
+    this.wsClient = makeWsClient(this.cfg);           // optional low-latency accelerator (private RPC only)
     this.account = null;      // set via useAccount()
     this.walletClient = null;
     this.unwatch = null;
     this.armed = null;        // active snipe params
     this.fired = false;
+  }
+
+  // Is there a snipe persisted from a previous session (awaiting unlock)?
+  pendingSnipe() {
+    if (this.armed) return null;
+    return readPending();
   }
 
   log(level, msg, data) {
@@ -31,6 +58,13 @@ export class Sniper extends EventEmitter {
     this.account = account;
     this.walletClient = makeWalletClient(this.cfg, account);
     this.log('info', `Wallet unlocked: ${account.address}`);
+
+    // Resume a snipe that was armed before the app/machine restarted.
+    const pending = this.pendingSnipe();
+    if (pending && pending.ticker) {
+      this.log('info', `Resuming saved snipe for $${normalizeTicker(pending.ticker)} from previous session.`);
+      try { this.arm(pending); } catch (e) { this.log('error', `Could not resume snipe: ${e.message}`); }
+    }
   }
 
   // params: { ticker, amountEth, slippagePct, maxFeePerGasGwei, maxPriorityFeePerGasGwei, deadlineSeconds }
@@ -40,13 +74,16 @@ export class Sniper extends EventEmitter {
 
     this.armed = { ...params, ticker: normalizeTicker(params.ticker) };
     this.fired = false;
-    this.log('info', `Armed for $${this.armed.ticker} — ${params.amountEth} ETH, ${params.slippagePct}% slippage. Listening for new pairs...`);
+    writePending(this.armed); // survive a restart until cancel or fire
+    const mode = this.wsClient ? 'live WS + polling' : 'polling (public RPC)';
+    this.log('info', `Armed for $${this.armed.ticker} — ${params.amountEth} ETH, ${params.slippagePct}% slippage. Listening (${mode}) until it launches or you cancel...`);
 
     this.unwatch = startPairListener(
-      this.wsClient,
+      { http: this.httpClient, ws: this.wsClient },
       this.cfg,
       (t) => this.onNewToken(t),
-      (e) => this.log('error', `listener error: ${e.shortMessage || e.message}`)
+      (e) => this.log('warn', `listener hiccup (auto-retrying): ${e.shortMessage || e.message}`),
+      (level, msg) => this.log(level, msg)
     );
     this.emit('state', { armed: true, ticker: this.armed.ticker });
   }
@@ -54,6 +91,7 @@ export class Sniper extends EventEmitter {
   disarm() {
     if (this.unwatch) { try { this.unwatch(); } catch {} this.unwatch = null; }
     this.armed = null;
+    clearPending(); // an explicit cancel (or a confirmed fill) ends the watch for good
     this.emit('state', { armed: false });
     this.log('info', 'Disarmed.');
   }

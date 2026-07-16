@@ -57,6 +57,27 @@ npm start             # launches the desktop app
 Import your key (UI import screen or `npm run keystore import`), unlock, enter a ticker,
 set amount/gas/slippage, hit **SNIPE**. The app arms, listens, and fires on the first match.
 
+## Always-on listening (until cancel or launch)
+
+Once armed, the sniper keeps watching **until the ticker launches or you cancel** — it is
+built not to go deaf in between:
+
+- **Polling backbone.** Every `discovery.pollMs` (default 3s) it scans the DEX factory for
+  new pools over a persisted block cursor, so an RPC blip, a dropped connection, or the
+  machine sleeping is **caught up** on the next scan — no launch slips through the gap.
+  This is what makes the rate-limited public RPC usable (it can't do `eth_subscribe`).
+- **WS accelerator (optional).** With a private endpoint (`ALCHEMY_KEY`) it *also* opens a
+  live WebSocket subscription for lower latency. It's best-effort — the poller is the
+  guarantee — and both paths are de-duplicated so a pair fires once.
+- **Self-healing.** Errors back off and retry (capped at 30s); the listener never dies on
+  its own. A heartbeat line (`listening… scanned to block N`) shows it's alive.
+- **Survives a restart.** The armed snipe is saved to `~/.rh-sniper/pending.json` (ticker +
+  amounts only, never the key). Reopen the app and **unlock**, and the snipe resumes
+  automatically. It's cleared only when you cancel or a buy confirms.
+
+Tune it in `config.json` under `discovery`. To listen truly 24/7 unattended, run it on an
+always-on machine with sleep disabled (and ideally a private RPC key for real-time speed).
+
 ## How it works
 
 ```

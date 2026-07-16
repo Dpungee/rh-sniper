@@ -27,7 +27,9 @@ Electron main (src/main.js)  ── IPC ──  renderer UI (src/ui/*)
         └─ Sniper engine (src/engine/)
              chain.js         viem clients + chain def + endpoint resolution + .env loader
              keystore.js      scrypt + AES-256-GCM local keystore (~/.rh-sniper/keystore.json)
-             discovery.js     watchContractEvent(factory) -> new pairs in real time
+             discovery.js     resilient factory listener: HTTP getLogs polling backbone
+                              (persisted block cursor, catches up after any gap) + optional
+                              WS accelerator (private RPC only); dedup + backoff, never dies
              resolver.js      symbol == ticker match (case-insensitive, strips leading $)
              safety.js        OPTIONAL honeypot gate (buy+sell sim); OFF by default
              swap.js          SwapRouter02 exactInputSingle path
@@ -37,6 +39,11 @@ Electron main (src/main.js)  ── IPC ──  renderer UI (src/ui/*)
 Data flow: `arm(params)` -> discovery emits new token -> resolver matches ticker ->
 (optional safety) -> executor builds+sends buy -> waitForTransactionReceipt -> log/disarm.
 The engine is an EventEmitter; UI subscribes to `log` / `state` / `fired` via preload IPC.
+
+Always-on guarantee: an armed snipe listens until it fires or is cancelled. `arm()` persists
+non-secret params to `~/.rh-sniper/pending.json`; `useAccount()` (unlock) auto-resumes any
+pending snipe, so an app/machine restart continues the watch. `disarm()` and a confirmed
+buy clear the pending file; a transient send failure keeps it armed and keeps watching.
 
 ## Config (`config.json`)
 - `dex.executor`: `"universal-router"` (default) or `"swap-router-02"`.

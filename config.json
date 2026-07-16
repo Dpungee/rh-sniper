@@ -36,5 +36,12 @@
   "safety": {
     "enabled": false,
     "note": "Set true to run buy+sell simulation / tax / honeypot checks before firing. Raw speed = OFF."
+  },
+
+  "discovery": {
+    "pollMs": 3000,
+    "heartbeatMs": 20000,
+    "maxBlockSpan": 2000,
+    "note": "Reliable-listening knobs. pollMs = how often the HTTP backbone scans for new pools (lower = faster + more RPC load). heartbeatMs = how often a 'still listening' breadcrumb is logged. maxBlockSpan = max blocks scanned per getLogs call (caps public-RPC load; leftover is caught next tick)."
   }
 }

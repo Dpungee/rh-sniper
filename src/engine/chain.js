@@ -70,6 +70,16 @@ export function makeHttpPublicClient(cfg) {
   return createPublicClient({ chain: robinhoodChain(cfg), transport: http(h) });
 }
 
+// Dedicated WebSocket client for low-latency event streaming. Returns null when
+// there's no usable WS endpoint. We only use this as an *accelerator* on top of
+// the HTTP polling backbone, and only when the endpoint is private (Alchemy /
+// custom) — the public RPC's WS does not support eth_subscribe reliably.
+export function makeWsClient(cfg) {
+  const { wss, isPrivate } = resolveEndpoints(cfg);
+  if (!wss || !isPrivate) return null;
+  return createPublicClient({ chain: robinhoodChain(cfg), transport: webSocket(wss) });
+}
+
 export function makeWalletClient(cfg, account) {
   const { http: h } = resolveEndpoints(cfg);
   return createWalletClient({ account, chain: robinhoodChain(cfg), transport: http(h) });
