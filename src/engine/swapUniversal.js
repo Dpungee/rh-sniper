@@ -64,12 +64,18 @@ export async function buildAndSendBuyUniversal({
 
   const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineSeconds || 60));
 
+  // Explicit gas limit → viem skips eth_estimateGas. Saves a round-trip at the
+  // critical moment AND avoids the estimate reverting on a brand-new pool
+  // (which would otherwise abort the buy before it's ever broadcast).
+  const gasLimit = BigInt(cfg.dex.gasLimit || 500000);
+
   const hash = await walletClient.writeContract({
     address: router,
     abi: UNIVERSAL_ROUTER_ABI,
     functionName: 'execute',
     args: [commands, [wrapInput, swapInput], deadline],
     value: amountIn,
+    gas: gasLimit,
     maxFeePerGas: parseGwei(String(maxFeePerGasGwei)),
     maxPriorityFeePerGas: parseGwei(String(maxPriorityFeePerGasGwei))
   });

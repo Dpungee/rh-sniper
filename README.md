@@ -80,6 +80,36 @@ anyone who can read that file can unlock the key. On Windows, disable sleep whil
 Import your key (UI import screen or `npm run keystore import`), unlock, enter a ticker,
 set amount/gas/slippage, hit **SNIPE**. The app arms, listens, and fires on the first match.
 
+## Speed — what actually makes you fast here
+
+Robinhood Chain is a **first-come-first-served sequencer L2** (Arbitrum Orbit): no public
+mempool, and `priority fee = 0`. Two consequences that differ from Ethereum L1:
+
+- **Mempool sniping is impossible** — there are no visible pending transactions; a pool
+  appears already-mined. Everyone sees a launch at the same block.
+- **Gas bidding does not win races.** The sequencer orders by arrival, not by fee. Bumping
+  priority fee buys you nothing here.
+
+So speed = **raw latency from detecting the new pool to the sequencer receiving your buy**.
+What this build does to minimise it:
+
+- **One read per candidate, in parallel.** Detection reads only the token `symbol` (needed
+  to match your ticker) and reads all pools in a scan concurrently, so your token is matched
+  as fast as its own read — never waiting behind unrelated pairs.
+- **No gas-estimation round-trip.** The buy sends with an explicit `dex.gasLimit`, so viem
+  skips `eth_estimateGas` at the critical moment. Bonus: estimation *reverts on a brand-new
+  pool*, so skipping it also removes a failure that could otherwise abort the snipe.
+- **RAW mode** additionally skips the quoter round-trip (see above).
+- **WS event stream** (Alchemy) hears about the mined pool without waiting for the next poll.
+
+What's left in **your** hands (not code):
+
+- **RPC latency to the sequencer.** A paid/dedicated endpoint geographically near the
+  sequencer, and running the bot on a low-latency box (VPS) rather than a home laptop, is
+  the biggest remaining win. On a home connection you are simply farther from the sequencer
+  than a co-located bot.
+- **`dex.gasLimit`** must stay comfortably above a real swap (~200–300k); too low = out-of-gas.
+
 ## Smart slippage
 
 A fixed slippage % is a blind guess at launch. With **SMART slippage** (on by default —

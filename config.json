@@ -22,8 +22,13 @@
     "universalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904",
     "quoter": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
     "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
-    "defaultFeeTier": 3000
+    "defaultFeeTier": 3000,
+    "gasLimit": 500000
   },
+
+  "__SPEED__": "Robinhood Chain is a first-come-first-served sequencer L2 (no public mempool, priority fee = 0), so speed = raw latency from detecting a pool to the sequencer receiving your buy — NOT gas bidding. dex.gasLimit sets an explicit gas limit so the buy skips viem's eth_estimateGas round-trip (saves latency AND avoids the estimate reverting on a brand-new pool). Keep it comfortably above a real swap's cost (~200-300k); too low = out-of-gas revert.",
+
+
 
   "defaults": {
     "amountEth": "0.01",

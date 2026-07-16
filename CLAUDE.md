@@ -90,6 +90,18 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
   selector/commands/params, and (ideally) `simulateContract` against the real contracts.
 - Never test real buys with real funds — use a throwaway wallet + tiny amount.
 
+## Speed model (important — this is a sequencer L2, not L1)
+Robinhood Chain is Arbitrum Orbit: **FCFS sequencer, no public mempool, priority fee = 0**
+(verified via RPC: `newPendingTransactions` → "notifications not supported", `txpool_status`
+unsupported, `eth_maxPriorityFeePerGas` → 0). Therefore:
+- Mempool watching is NOT possible here and must not be built — pools appear already-mined.
+- Gas-priority bidding does NOT win ordering; do not add fee-escalation "to win the race".
+- The only lever is latency: detect → sign → reach sequencer first.
+Code choices that serve this: discovery reads only `symbol` and processes a scan's logs
+concurrently (`handleLogs`); both executors pass an explicit `dex.gasLimit` to skip
+`eth_estimateGas` (a round-trip AND a fresh-pool revert source). Further latency wins are
+infrastructural (paid RPC near the sequencer, low-latency host), not code.
+
 ## Known gotchas
 - Fresh pools often can't be quoted yet → `computeMinOut` returns `0n` (accept-any). That's
   intentional for launch-moment sniping but is the main money-risk knob; document any change.

@@ -69,23 +69,24 @@ export function startPairListener(clients, cfg, onNewToken, onError, log) {
     if (!poolOrPair) return;
     const key = String(poolOrPair).toLowerCase();
     if (seen.has(key)) return;
-    seen.add(key);
+    seen.add(key); // synchronous claim before any await → dedup is race-free
 
     const feeTier = l.args.fee ?? cfg.dex.defaultFeeTier;
     const tokenAddr = pickNewToken(token0, token1, wrapped);
 
-    // Read the token's symbol so we can match by ticker.
+    // Read ONLY the symbol — that's all ticker matching needs. `decimals` used to
+    // be read here too, but nothing downstream consumes it, and on an FCFS
+    // sequencer chain every round-trip between detection and firing is latency
+    // you can't get back. One read, not two.
     let symbol = '?';
-    let decimals = 18;
     try {
       const token = getContract({ address: tokenAddr, abi: ERC20_ABI, client: httpClient });
-      [symbol, decimals] = await Promise.all([token.read.symbol(), token.read.decimals()]);
+      symbol = await token.read.symbol();
     } catch { /* token may not implement symbol(); leave as ? */ }
 
     onNewToken({
       token: tokenAddr,
       symbol: String(symbol),
-      decimals: Number(decimals),
       pool: poolOrPair,
       feeTier: Number(feeTier),
       token0,
@@ -93,6 +94,13 @@ export function startPairListener(clients, cfg, onNewToken, onError, log) {
       txHash: l.transactionHash,
       blockNumber: l.blockNumber
     });
+  }
+
+  // Process a batch of logs concurrently. When several pools land in one scan,
+  // your ticker might be the last one — serial symbol reads would make you wait
+  // on every unrelated token first. Parallel = matched as fast as its own read.
+  function handleLogs(logs) {
+    return Promise.all(logs.map((l) => handleLog(l).catch((e) => onError?.(e))));
   }
 
   function maybeHeartbeat(block) {
@@ -130,10 +138,8 @@ export function startPairListener(clients, cfg, onNewToken, onError, log) {
         throw e; // real error: let the outer loop back off and retry
       }
 
-      for (const l of logs) {
-        if (stopped) return;
-        await handleLog(l);
-      }
+      if (stopped) return;
+      await handleLogs(logs); // concurrent symbol reads
       fromBlock = toBlock + 1n; // advance the cursor only after a successful scan
     }
     consecutiveErrors = 0;
@@ -167,10 +173,8 @@ export function startPairListener(clients, cfg, onNewToken, onError, log) {
         eventName,
         onError: (e) => { onError?.(e); },
         onLogs: async (logs) => {
-          for (const l of logs) {
-            if (stopped) return;
-            try { await handleLog(l); } catch (e) { onError?.(e); }
-          }
+          if (stopped) return;
+          await handleLogs(logs); // concurrent symbol reads
         }
       });
     } catch (e) {

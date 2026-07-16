@@ -64,7 +64,11 @@ export async function buildAndSendBuy({
     sqrtPriceLimitX96: 0n
   };
 
+  // Explicit gas limit → viem skips eth_estimateGas. Saves a round-trip at the
+  // critical moment AND avoids the estimate reverting on a brand-new pool
+  // (which would otherwise abort the buy before it's ever broadcast).
   const gas = {
+    gas: BigInt(cfg.dex.gasLimit || 500000),
     maxFeePerGas: parseGwei(String(maxFeePerGasGwei)),
     maxPriorityFeePerGas: parseGwei(String(maxPriorityFeePerGasGwei))
   };
