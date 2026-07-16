@@ -44,6 +44,6 @@
     "pollMs": 3000,
     "heartbeatMs": 20000,
     "maxBlockSpan": 2000,
-    "note": "Reliable-listening knobs. pollMs = how often the HTTP backbone scans for new pools (lower = faster + more RPC load). heartbeatMs = how often a 'still listening' breadcrumb is logged. maxBlockSpan = max blocks scanned per getLogs call (caps public-RPC load; leftover is caught next tick)."
+    "note": "Reliable-listening knobs. pollMs = how often the HTTP backbone scans for new pools (lower = faster + more RPC load). heartbeatMs = how often a 'still listening' breadcrumb is logged. maxBlockSpan = starting max blocks per getLogs call; the span auto-shrinks if the provider caps the range (e.g. Alchemy free tier = 10 blocks) so the scan cursor never wedges."
   }
 }

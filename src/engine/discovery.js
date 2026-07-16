@@ -52,6 +52,16 @@ export function startPairListener(clients, cfg, onNewToken, onError, log) {
   let lastHeartbeat = 0;
   let consecutiveErrors = 0;
   let unwatchWs = null;
+  // Adaptive getLogs span. Some providers cap the block range per request
+  // (Alchemy free tier: 10 blocks). We start optimistic and shrink when the
+  // RPC rejects the range, so the cursor always advances and never wedges.
+  let span = maxSpan;
+
+  function isRangeError(e) {
+    const m = `${e?.message || ''} ${e?.details || ''} ${e?.cause?.message || ''}`.toLowerCase();
+    return m.includes('block range') || m.includes('range should work') ||
+           m.includes('not a valid request') || m.includes('query returned more than');
+  }
 
   async function handleLog(l) {
     const { token0, token1 } = l.args;
@@ -100,17 +110,34 @@ export function startPairListener(clients, cfg, onNewToken, onError, log) {
     if (fromBlock === null) fromBlock = latest + 1n;
     if (latest < fromBlock) { maybeHeartbeat(latest); return; }
 
-    let toBlock = latest;
-    if (toBlock - fromBlock + 1n > maxSpan) toBlock = fromBlock + maxSpan - 1n;
+    // Chunk through [fromBlock, latest] with the adaptive span so a backlog
+    // (sleep, outage) is fully caught up. Bounded per tick to stay polite.
+    for (let chunk = 0; chunk < 50 && fromBlock <= latest && !stopped; chunk++) {
+      let toBlock = latest;
+      if (toBlock - fromBlock + 1n > span) toBlock = fromBlock + span - 1n;
 
-    const logs = await httpClient.getLogs({ address: factory, event: eventItem, fromBlock, toBlock });
-    for (const l of logs) {
-      if (stopped) return;
-      await handleLog(l);
+      let logs;
+      try {
+        logs = await httpClient.getLogs({ address: factory, event: eventItem, fromBlock, toBlock });
+      } catch (e) {
+        if (isRangeError(e) && span > 2n) {
+          // Provider rejected the range — shrink and retry this window next loop.
+          const newSpan = span / 2n < 2n ? 2n : span / 2n;
+          log?.('debug', `provider capped getLogs range — shrinking scan window ${span} -> ${newSpan} blocks`);
+          span = newSpan;
+          continue;
+        }
+        throw e; // real error: let the outer loop back off and retry
+      }
+
+      for (const l of logs) {
+        if (stopped) return;
+        await handleLog(l);
+      }
+      fromBlock = toBlock + 1n; // advance the cursor only after a successful scan
     }
-    fromBlock = toBlock + 1n; // advance; leftover span (if capped) is caught next tick
     consecutiveErrors = 0;
-    maybeHeartbeat(toBlock);
+    maybeHeartbeat(fromBlock - 1n);
   }
 
   async function pollLoop() {
