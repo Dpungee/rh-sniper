@@ -34,8 +34,10 @@
   },
 
   "safety": {
-    "enabled": false,
-    "note": "Set true to run buy+sell simulation / tax / honeypot checks before firing. Raw speed = OFF."
+    "enabled": true,
+    "retries": 20,
+    "retryMs": 3000,
+    "note": "Runs buy+sell quote simulation before firing; blocks likely honeypots / >50% round-trip tax. Set false for raw speed (no checks). Brand-new pools can't be quoted until liquidity lands, so a blocked match is RECHECKED every retryMs up to retries times (default: 20 x 3s = 1 min window) before giving up on that token; the sniper stays armed either way."
   },
 
   "discovery": {

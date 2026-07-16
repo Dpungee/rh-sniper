@@ -16,8 +16,12 @@ Uniswap contracts with a locally-held key.
 npm install
 npm run dryrun      # read-only: chain connectivity + live pair listener (no wallet)
 npm start           # launch the Electron app
+npm run snipe -- --ticker X --amount 0.01   # headless arm+listen+fire (no UI)
 npm run keystore import   # optional: import key from terminal instead of the UI
 ```
+`run-headless.bat` / `run-headless.sh` wrap `npm run snipe` with auto-restart-on-crash.
+Headless exit codes: 0 = snipe done/cancelled (don't restart), 1 = crash (restart),
+2 = setup error (don't restart). Unattended unlock via env `RH_PASSWORD`.
 Node 18+ required (uses built-in fetch, ESM, node:crypto scrypt).
 
 ## Architecture
@@ -57,7 +61,9 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
 - RPC precedence (see `resolveEndpoints`): env `RH_RPC_HTTP/WSS` > `ALCHEMY_KEY` >
   `chain.rpcHttpPrivate/WssPrivate` > public `chain.rpcHttp/Wss`. A private WSS endpoint
   enables real-time `eth_subscribe` streaming; public RPC is rate-limited and polls.
-- `safety.enabled`: honeypot gate. Currently `false` (raw speed) by the user's choice.
+- `safety.enabled`: honeypot gate (buy+sell quote sim). Currently `true` (user's choice,
+  2026-07-16). Unquotable fresh pools are rechecked every `safety.retryMs` up to
+  `safety.retries` times before that token is abandoned; the snipe stays armed regardless.
 
 ## Conventions
 - ES modules everywhere (`"type": "module"`). Electron preload MUST stay CommonJS →
@@ -83,5 +89,4 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
 
 ## Roadmap / not-yet-built
 - Auto-sell (take-profit / stop-loss) after a fill.
-- Turning the safety gate on by default.
 - Migrating v3-path swaps to v4 if/when liquidity moves.

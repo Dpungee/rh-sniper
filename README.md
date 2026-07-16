@@ -12,9 +12,12 @@ public RPC and DEX router — it is **not** connected to your Robinhood account.
 ## ⚠️ Read this first
 
 - **Ticker sniping is not safe by design.** On-chain, symbols are not unique — scammers
-  spam duplicate tickers and honeypots to catch snipers. This build runs in **raw-speed
-  mode with the safety gate OFF** (your choice). A honeypot filter exists in `src/engine/safety.js`;
-  flip `safety.enabled` to `true` in `config.json` to use it.
+  spam duplicate tickers and honeypots to catch snipers. The honeypot **safety gate is ON**
+  by default (`safety.enabled` in `config.json`): before firing it simulates a buy and an
+  immediate sell, blocking likely honeypots and >50% round-trip tax. Fresh pools that can't
+  be quoted yet are rechecked every 3s for ~1 minute (`safety.retries`/`retryMs`) so a real
+  launch isn't abandoned just because liquidity landed a few blocks late. Set
+  `safety.enabled: false` for raw speed — no checks, fires on first symbol match.
 - **Contract addresses are filled in and verified.** `config.json` ships with the real
   Robinhood Chain Uniswap v3 addresses (factory, SwapRouter02, QuoterV2) and canonical WETH,
   confirmed against Uniswap + Robinhood docs and checked to have live contract code on-chain.
@@ -53,6 +56,21 @@ npm install
 npm run dryrun        # read-only: confirms RPC + (if factory set) live pair listener
 npm start             # launches the desktop app
 ```
+
+### Headless / 24-7 (no UI)
+
+```bash
+npm run snipe -- --ticker PEPE --amount 0.01 --slippage 15   # arm + listen in the terminal
+npm run snipe -- --resume                                    # resume a saved snipe
+run-headless.bat --ticker PEPE --amount 0.01                 # Windows: auto-restarts on crash
+./run-headless.sh  --ticker PEPE --amount 0.01               # macOS/Linux/VPS: same
+```
+
+The wrappers restart the sniper if it crashes and stop cleanly once the snipe completes
+(exit 0) or on a setup error like a wrong password (exit 2). For fully unattended runs set
+`RH_PASSWORD` in `.env` so it can unlock without a prompt — **throwaway wallet only**, since
+anyone who can read that file can unlock the key. On Windows, disable sleep while it runs
+(`powercfg /change standby-timeout-ac 0`); on a VPS use tmux/systemd so it outlives SSH.
 
 Import your key (UI import screen or `npm run keystore import`), unlock, enter a ticker,
 set amount/gas/slippage, hit **SNIPE**. The app arms, listens, and fires on the first match.

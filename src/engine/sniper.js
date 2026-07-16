@@ -105,9 +105,20 @@ export class Sniper extends EventEmitter {
     this.fired = true; // prevent double-fire
 
     try {
-      const gate = await passesSafety(this.httpClient, this.cfg, t.token, t.feeTier, this.armed.amountEth);
+      // A just-created pool often can't be quoted until liquidity lands, and its
+      // PoolCreated event only fires once — so a blocked match RETRIES the gate
+      // for a window instead of abandoning the token forever.
+      const retries = Number(this.cfg.safety?.retries ?? 20);
+      const retryMs = Number(this.cfg.safety?.retryMs ?? 3000);
+      let gate = await passesSafety(this.httpClient, this.cfg, t.token, t.feeTier, this.armed.amountEth);
+      for (let i = 1; !gate.ok && i <= retries && this.armed; i++) {
+        this.log('warn', `Safety gate not passing yet (${gate.reason}) — recheck ${i}/${retries} in ${retryMs / 1000}s...`);
+        await new Promise((r) => setTimeout(r, retryMs));
+        gate = await passesSafety(this.httpClient, this.cfg, t.token, t.feeTier, this.armed.amountEth);
+      }
+      if (!this.armed) { this.fired = false; return; } // cancelled mid-retry
       if (!gate.ok) {
-        this.log('warn', `Blocked by safety gate: ${gate.reason}`);
+        this.log('warn', `Blocked by safety gate after ${retries} rechecks: ${gate.reason}. Still armed, still listening.`);
         this.fired = false; // allow a later, cleaner match
         return;
       }
