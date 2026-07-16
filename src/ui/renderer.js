@@ -83,7 +83,8 @@ $('armBtn')?.addEventListener('click', async ()=>{
     maxFeePerGasGwei: $('maxfee').value.trim(),
     maxPriorityFeePerGasGwei: $('prio').value.trim(),
     deadlineSeconds: cfg.defaults.deadlineSeconds,
-    rawMode: $('rawMode').checked
+    rawMode: $('rawMode').checked,
+    smartSlippage: $('smartSlippage').checked
   };
   try{ await window.api.arm(params); }catch(e){ alert(e.message); }
 });

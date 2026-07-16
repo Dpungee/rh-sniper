@@ -64,6 +64,11 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
 - `safety.enabled`: honeypot gate (buy+sell quote sim). Currently `true` (user's choice,
   2026-07-16). Unquotable fresh pools are rechecked every `safety.retryMs` up to
   `safety.retries` times before that token is abandoned; the snipe stays armed regardless.
+- Per-snipe `smartSlippage` param (UI checkbox, default ON; headless `--no-smart` disables):
+  escalating slippage ladder in sniper.js onNewToken — start at user's %, widen by
+  `smartSlippage.widenFactor` ONLY on a price revert (see `isPriceRevert`), capped at
+  `smartSlippage.maxPct`. Retries both estimate-time rejections and on-chain reverts.
+  Never retries non-price failures. Inert in raw mode.
 - Per-snipe `rawMode` param (UI checkbox / headless `--raw`) turns off ALL safety features
   for that snipe: skips the honeypot gate AND the quoter/min-out in both executors
   (amountOutMinimum=0, accept any price; saves the quoter RPC round-trip). Persists with

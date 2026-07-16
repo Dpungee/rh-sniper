@@ -40,6 +40,12 @@
     "note": "Runs buy+sell quote simulation before firing; blocks likely honeypots / >50% round-trip tax. Set false for raw speed (no checks). Brand-new pools can't be quoted until liquidity lands, so a blocked match is RECHECKED every retryMs up to retries times (default: 20 x 3s = 1 min window) before giving up on that token; the sniper stays armed either way."
   },
 
+  "smartSlippage": {
+    "maxPct": 50,
+    "widenFactor": 2,
+    "note": "Ladder for the per-snipe smart-slippage option: start at your slippage, multiply by widenFactor on each PRICE-revert (min-out failure), never exceed maxPct. e.g. 15% -> 30% -> 50%. Non-price failures never retry. Ignored in raw mode (min-out is 0 there)."
+  },
+
   "discovery": {
     "pollMs": 3000,
     "heartbeatMs": 20000,

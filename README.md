@@ -80,6 +80,16 @@ anyone who can read that file can unlock the key. On Windows, disable sleep whil
 Import your key (UI import screen or `npm run keystore import`), unlock, enter a ticker,
 set amount/gas/slippage, hit **SNIPE**. The app arms, listens, and fires on the first match.
 
+## Smart slippage
+
+A fixed slippage % is a blind guess at launch. With **SMART slippage** (on by default —
+checkbox in the app, `--no-smart` to disable headless) the buy starts at *your* slippage
+and only widens when it fails **on a price check** (min-out revert), stepping
+`x widenFactor` up to `smartSlippage.maxPct` (defaults: 15% → 30% → 50% cap). Calm launch:
+you pay the tight price. Chaotic launch: you still get filled, never beyond the cap.
+Non-price failures (insufficient funds, gas, nonce, RPC) are **never** retried. Raw mode
+ignores this entirely (min-out is 0 there).
+
 ## Always-on listening (until cancel or launch)
 
 Once armed, the sniper keeps watching **until the ticker launches or you cancel** — it is

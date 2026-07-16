@@ -31,6 +31,18 @@ function clearPending() {
   try { fs.rmSync(PENDING_PATH, { force: true }); } catch { /* best-effort */ }
 }
 
+// Did this send fail on a PRICE check (min-out / slippage revert)? Only these
+// are safe to retry with a wider tolerance. Anything else (insufficient funds,
+// nonce, gas, RPC trouble) must NOT be retried blindly.
+function isPriceRevert(e) {
+  const m = `${e?.shortMessage || ''} ${e?.message || ''} ${e?.details || ''} ${e?.cause?.message || ''}`.toLowerCase();
+  return m.includes('too little received')      // UniversalRouter V3TooLittleReceived
+    || m.includes('v3toolittlereceived')
+    || m.includes('insufficient output')        // SwapRouter02 "Too little received" variants
+    || m.includes('amountoutminimum')
+    || m.includes('slippage');
+}
+
 export class Sniper extends EventEmitter {
   constructor() {
     super();
@@ -135,7 +147,8 @@ export class Sniper extends EventEmitter {
       const useUniversal = (this.cfg.dex.executor || 'universal-router') === 'universal-router';
       const execFn = useUniversal ? buildAndSendBuyUniversal : buildAndSendBuy;
       this.log('debug', `executor: ${useUniversal ? 'UniversalRouter' : 'SwapRouter02'}`);
-      const res = await execFn({
+
+      const sendOnce = (slippagePct) => execFn({
         publicClient: this.httpClient,
         walletClient: this.walletClient,
         account: this.account,
@@ -143,21 +156,55 @@ export class Sniper extends EventEmitter {
         tokenOut: t.token,
         feeTier: t.feeTier,
         amountEth: this.armed.amountEth,
-        slippagePct: this.armed.slippagePct,
+        slippagePct,
         maxFeePerGasGwei: this.armed.maxFeePerGasGwei,
         maxPriorityFeePerGasGwei: this.armed.maxPriorityFeePerGasGwei,
         deadlineSeconds: this.armed.deadlineSeconds,
         rawMode: Boolean(this.armed.rawMode)
       });
 
-      this.log('success', `TX sent: ${res.hash}`, { hash: res.hash, explorer: `${this.cfg.chain.explorer}/tx/${res.hash}` });
-      this.emit('fired', { token: t, hash: res.hash });
+      // Smart slippage: start at the user's tolerance; if the buy fails on a
+      // PRICE check (min-out revert), widen a step and retry immediately, up to
+      // a hard cap. Non-price failures (funds, gas, nonce) are never retried.
+      const smart = Boolean(this.armed.smartSlippage) && !this.armed.rawMode;
+      const capPct = Number(this.cfg.smartSlippage?.maxPct ?? 50);
+      const widen = Number(this.cfg.smartSlippage?.widenFactor ?? 2);
+      const ladder = [Number(this.armed.slippagePct)];
+      if (smart) {
+        for (let s = ladder[0] * widen; s < capPct; s *= widen) ladder.push(Math.round(s));
+        if (ladder[ladder.length - 1] < capPct) ladder.push(capPct);
+      }
 
-      // Watch for confirmation.
-      const receipt = await this.httpClient.waitForTransactionReceipt({ hash: res.hash });
-      if (receipt.status === 'success') {
+      let res = null;
+      let receipt = null;
+      for (let i = 0; i < ladder.length; i++) {
+        const slip = ladder[i];
+        if (i > 0) this.log('warn', `Smart slippage: widening to ${slip}% (attempt ${i + 1}/${ladder.length})...`);
+        try {
+          res = await sendOnce(slip);
+        } catch (e) {
+          if (smart && i < ladder.length - 1 && isPriceRevert(e)) {
+            this.log('warn', `Buy rejected on price at ${slip}% slippage: ${e.shortMessage || e.message}`);
+            continue;
+          }
+          throw e;
+        }
+        this.log('success', `TX sent (${slip}% slippage): ${res.hash}`, { hash: res.hash, explorer: `${this.cfg.chain.explorer}/tx/${res.hash}` });
+        this.emit('fired', { token: t, hash: res.hash });
+
+        receipt = await this.httpClient.waitForTransactionReceipt({ hash: res.hash });
+        if (receipt.status === 'success') break;
+        // Reverted on-chain — price moved between estimate and inclusion.
+        if (smart && i < ladder.length - 1) {
+          this.log('warn', `TX reverted on-chain at ${slip}% slippage (${res.hash}) — price moved. Widening...`);
+          continue;
+        }
+        break;
+      }
+
+      if (receipt?.status === 'success') {
         this.log('success', `CONFIRMED in block ${receipt.blockNumber}. Bought $${t.symbol}.`);
-      } else {
+      } else if (receipt) {
         this.log('error', `Transaction reverted (${res.hash}).`);
       }
       this.disarm();

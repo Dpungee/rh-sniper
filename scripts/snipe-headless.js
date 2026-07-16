@@ -91,12 +91,14 @@ async function main() {
       maxFeePerGasGwei: Number(args.gas ?? cfg.defaults.maxFeePerGasGwei),
       maxPriorityFeePerGasGwei: Number(args.prio ?? cfg.defaults.maxPriorityFeePerGasGwei),
       deadlineSeconds: Number(args.deadline ?? cfg.defaults.deadlineSeconds),
-      rawMode: Boolean(args.raw) // --raw = ALL safety checks off for this snipe
+      rawMode: Boolean(args.raw), // --raw = ALL safety checks off for this snipe
+      smartSlippage: !args['no-smart'] // smart slippage ladder ON by default; --no-smart = fixed %
     });
   } else if (!sniper.armed) {
-    console.error('Usage: npm run snipe -- --ticker SYMBOL [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI] [--raw]');
+    console.error('Usage: npm run snipe -- --ticker SYMBOL [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI] [--raw] [--no-smart]');
     console.error('       npm run snipe -- --resume');
-    console.error('  --raw   turn ALL safety checks off (no honeypot/tax simulation)');
+    console.error('  --raw       turn ALL safety checks off (no honeypot/tax simulation, min-out 0)');
+    console.error('  --no-smart  disable the smart-slippage ladder (use your % as a fixed value)');
     process.exit(2);
   }
 
