@@ -82,7 +82,8 @@ $('armBtn')?.addEventListener('click', async ()=>{
     slippagePct: Number($('slippage').value),
     maxFeePerGasGwei: $('maxfee').value.trim(),
     maxPriorityFeePerGasGwei: $('prio').value.trim(),
-    deadlineSeconds: cfg.defaults.deadlineSeconds
+    deadlineSeconds: cfg.defaults.deadlineSeconds,
+    rawMode: $('rawMode').checked
   };
   try{ await window.api.arm(params); }catch(e){ alert(e.message); }
 });

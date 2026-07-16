@@ -90,11 +90,13 @@ async function main() {
       slippagePct: Number(args.slippage ?? cfg.defaults.slippagePct),
       maxFeePerGasGwei: Number(args.gas ?? cfg.defaults.maxFeePerGasGwei),
       maxPriorityFeePerGasGwei: Number(args.prio ?? cfg.defaults.maxPriorityFeePerGasGwei),
-      deadlineSeconds: Number(args.deadline ?? cfg.defaults.deadlineSeconds)
+      deadlineSeconds: Number(args.deadline ?? cfg.defaults.deadlineSeconds),
+      rawMode: Boolean(args.raw) // --raw = ALL safety checks off for this snipe
     });
   } else if (!sniper.armed) {
-    console.error('Usage: npm run snipe -- --ticker SYMBOL [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI]');
+    console.error('Usage: npm run snipe -- --ticker SYMBOL [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI] [--raw]');
     console.error('       npm run snipe -- --resume');
+    console.error('  --raw   turn ALL safety checks off (no honeypot/tax simulation)');
     process.exit(2);
   }
 

@@ -64,6 +64,8 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
 - `safety.enabled`: honeypot gate (buy+sell quote sim). Currently `true` (user's choice,
   2026-07-16). Unquotable fresh pools are rechecked every `safety.retryMs` up to
   `safety.retries` times before that token is abandoned; the snipe stays armed regardless.
+- Per-snipe `rawMode` param (UI checkbox / headless `--raw`) overrides the gate entirely
+  for that snipe — no simulation, fires on first symbol match. Persists with pending.json.
 
 ## Conventions
 - ES modules everywhere (`"type": "module"`). Electron preload MUST stay CommonJS →

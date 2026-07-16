@@ -76,7 +76,8 @@ export class Sniper extends EventEmitter {
     this.fired = false;
     writePending(this.armed); // survive a restart until cancel or fire
     const mode = this.wsClient ? 'live WS + polling' : 'polling (public RPC)';
-    this.log('info', `Armed for $${this.armed.ticker} — ${params.amountEth} ETH, ${params.slippagePct}% slippage. Listening (${mode}) until it launches or you cancel...`);
+    const raw = this.armed.rawMode ? ' ⚠ RAW MODE (no safety checks)' : '';
+    this.log('info', `Armed for $${this.armed.ticker} — ${params.amountEth} ETH, ${params.slippagePct}% slippage.${raw} Listening (${mode}) until it launches or you cancel...`);
 
     this.unwatch = startPairListener(
       { http: this.httpClient, ws: this.wsClient },
@@ -105,24 +106,30 @@ export class Sniper extends EventEmitter {
     this.fired = true; // prevent double-fire
 
     try {
-      // A just-created pool often can't be quoted until liquidity lands, and its
-      // PoolCreated event only fires once — so a blocked match RETRIES the gate
-      // for a window instead of abandoning the token forever.
-      const retries = Number(this.cfg.safety?.retries ?? 20);
-      const retryMs = Number(this.cfg.safety?.retryMs ?? 3000);
-      let gate = await passesSafety(this.httpClient, this.cfg, t.token, t.feeTier, this.armed.amountEth);
-      for (let i = 1; !gate.ok && i <= retries && this.armed; i++) {
-        this.log('warn', `Safety gate not passing yet (${gate.reason}) — recheck ${i}/${retries} in ${retryMs / 1000}s...`);
-        await new Promise((r) => setTimeout(r, retryMs));
-        gate = await passesSafety(this.httpClient, this.cfg, t.token, t.feeTier, this.armed.amountEth);
+      if (this.armed.rawMode) {
+        // RAW MODE: the user explicitly disabled ALL safety checks for this
+        // snipe. No honeypot simulation, no tax check — fire on symbol match.
+        this.log('warn', 'RAW MODE — all safety checks skipped. Firing immediately.');
+      } else {
+        // A just-created pool often can't be quoted until liquidity lands, and its
+        // PoolCreated event only fires once — so a blocked match RETRIES the gate
+        // for a window instead of abandoning the token forever.
+        const retries = Number(this.cfg.safety?.retries ?? 20);
+        const retryMs = Number(this.cfg.safety?.retryMs ?? 3000);
+        let gate = await passesSafety(this.httpClient, this.cfg, t.token, t.feeTier, this.armed.amountEth);
+        for (let i = 1; !gate.ok && i <= retries && this.armed; i++) {
+          this.log('warn', `Safety gate not passing yet (${gate.reason}) — recheck ${i}/${retries} in ${retryMs / 1000}s...`);
+          await new Promise((r) => setTimeout(r, retryMs));
+          gate = await passesSafety(this.httpClient, this.cfg, t.token, t.feeTier, this.armed.amountEth);
+        }
+        if (!this.armed) { this.fired = false; return; } // cancelled mid-retry
+        if (!gate.ok) {
+          this.log('warn', `Blocked by safety gate after ${retries} rechecks: ${gate.reason}. Still armed, still listening.`);
+          this.fired = false; // allow a later, cleaner match
+          return;
+        }
+        if (this.cfg.safety?.enabled) this.log('info', `Safety OK: ${gate.reason}`);
       }
-      if (!this.armed) { this.fired = false; return; } // cancelled mid-retry
-      if (!gate.ok) {
-        this.log('warn', `Blocked by safety gate after ${retries} rechecks: ${gate.reason}. Still armed, still listening.`);
-        this.fired = false; // allow a later, cleaner match
-        return;
-      }
-      if (this.cfg.safety?.enabled) this.log('info', `Safety OK: ${gate.reason}`);
 
       const useUniversal = (this.cfg.dex.executor || 'universal-router') === 'universal-router';
       const execFn = useUniversal ? buildAndSendBuyUniversal : buildAndSendBuy;

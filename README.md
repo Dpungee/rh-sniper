@@ -18,6 +18,9 @@ public RPC and DEX router — it is **not** connected to your Robinhood account.
   be quoted yet are rechecked every 3s for ~1 minute (`safety.retries`/`retryMs`) so a real
   launch isn't abandoned just because liquidity landed a few blocks late. Set
   `safety.enabled: false` for raw speed — no checks, fires on first symbol match.
+  You can also go raw **per snipe** without touching config: the red **RAW MODE** checkbox
+  in the app, or `--raw` on the headless runner. Raw mode skips every check — honeypots
+  included — so it's entirely on you.
 - **Contract addresses are filled in and verified.** `config.json` ships with the real
   Robinhood Chain Uniswap v3 addresses (factory, SwapRouter02, QuoterV2) and canonical WETH,
   confirmed against Uniswap + Robinhood docs and checked to have live contract code on-chain.
