@@ -1,0 +1,40 @@
+{
+  "chain": {
+    "name": "Robinhood Chain",
+    "chainId": 4663,
+    "rpcHttp": "https://rpc.mainnet.chain.robinhood.com",
+    "rpcWss": "wss://rpc.mainnet.chain.robinhood.com",
+    "rpcHttpPrivate": "",
+    "rpcWssPrivate": "",
+    "alchemyKey": "",
+    "explorer": "https://robinhoodchain.blockscout.com",
+    "nativeSymbol": "ETH",
+    "wrappedNative": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+  },
+
+  "__NOTE__": "For fast, non-rate-limited access + real-time WS event streaming, set alchemyKey (or rpcHttpPrivate/rpcWssPrivate, or env RH_RPC_HTTP/RH_RPC_WSS). Get a free key at dashboard.alchemy.com -> create a Robinhood Chain app. Addresses verified against official Uniswap + Robinhood docs (July 2026) and confirmed to have live on-chain bytecode.",
+
+  "dex": {
+    "kind": "uniswap-v3",
+    "executor": "universal-router",
+    "factory": "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
+    "router": "0xcaf681a66d020601342297493863e78c959e5cb2",
+    "universalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904",
+    "quoter": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "defaultFeeTier": 3000
+  },
+
+  "defaults": {
+    "amountEth": "0.01",
+    "slippagePct": 15,
+    "maxFeePerGasGwei": 0.5,
+    "maxPriorityFeePerGasGwei": 0.1,
+    "deadlineSeconds": 60
+  },
+
+  "safety": {
+    "enabled": false,
+    "note": "Set true to run buy+sell simulation / tax / honeypot checks before firing. Raw speed = OFF."
+  }
+}

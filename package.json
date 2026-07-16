@@ -1,0 +1,19 @@
+{
+  "name": "rh-sniper",
+  "version": "0.1.0",
+  "description": "Robinhood Chain meme-coin sniper — ticker-driven, exact-amount, configurable gas & slippage.",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "dryrun": "node scripts/dryrun.js",
+    "keystore": "node scripts/keystore-cli.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

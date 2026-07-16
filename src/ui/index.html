@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>RH Chain Sniper</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot"></span>
+        <span>RH Chain Sniper</span>
+      </div>
+      <div id="wallet" class="wallet muted">no wallet</div>
+    </header>
+
+    <!-- Wallet gate -->
+    <section id="lockPane" class="pane">
+      <div id="importBox" class="card hidden">
+        <h2>Import wallet</h2>
+        <p class="muted small">Encrypted locally with your password. The key never leaves this machine.</p>
+        <input id="pkInput" type="password" placeholder="Private key (0x...)" autocomplete="off" />
+        <input id="pkPass" type="password" placeholder="Choose a password" autocomplete="off" />
+        <button id="importBtn" class="primary">Encrypt &amp; save</button>
+      </div>
+      <div id="unlockBox" class="card hidden">
+        <h2>Unlock</h2>
+        <div id="lockedAddr" class="mono small muted"></div>
+        <input id="unlockPass" type="password" placeholder="Password" autocomplete="off" />
+        <button id="unlockBtn" class="primary">Unlock</button>
+      </div>
+    </section>
+
+    <!-- Sniper -->
+    <section id="mainPane" class="pane hidden">
+      <div class="card">
+        <label>Ticker</label>
+        <div class="ticker-row">
+          <span class="dollar">$</span>
+          <input id="ticker" type="text" placeholder="CASHCAT" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>Amount (ETH) — exact</label>
+            <input id="amount" type="text" inputmode="decimal" placeholder="0.01" />
+          </div>
+          <div>
+            <label>Slippage %</label>
+            <input id="slippage" type="text" inputmode="decimal" placeholder="15" />
+          </div>
+          <div>
+            <label>Max fee (gwei)</label>
+            <input id="maxfee" type="text" inputmode="decimal" placeholder="0.5" />
+          </div>
+          <div>
+            <label>Priority fee (gwei)</label>
+            <input id="prio" type="text" inputmode="decimal" placeholder="0.1" />
+          </div>
+        </div>
+
+        <button id="armBtn" class="snipe">SNIPE</button>
+        <button id="disarmBtn" class="ghost hidden">DISARM</button>
+        <div id="warn" class="warn small hidden"></div>
+      </div>
+
+      <div class="log card">
+        <div class="log-head">
+          <span>Live log</span>
+          <span id="statusPill" class="pill idle">idle</span>
+        </div>
+        <div id="log" class="log-body"></div>
+      </div>
+    </section>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
