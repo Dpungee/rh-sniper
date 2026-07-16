@@ -42,7 +42,8 @@ export async function buildAndSendBuy({
   slippagePct,
   maxFeePerGasGwei,
   maxPriorityFeePerGasGwei,
-  deadlineSeconds
+  deadlineSeconds,
+  rawMode
 }) {
   const router = cfg.dex.router;
   if (!router || /^0x0+$/.test(router)) {
@@ -50,7 +51,8 @@ export async function buildAndSendBuy({
   }
 
   const amountIn = parseEther(String(amountEth));
-  const minOut = await computeMinOut(publicClient, cfg, tokenOut, amountIn, feeTier, slippagePct);
+  // RAW MODE: skip the quoter round-trip entirely and accept ANY price (minOut=0).
+  const minOut = rawMode ? 0n : await computeMinOut(publicClient, cfg, tokenOut, amountIn, feeTier, slippagePct);
 
   const params = {
     tokenIn: cfg.chain.wrappedNative,

@@ -107,9 +107,10 @@ export class Sniper extends EventEmitter {
 
     try {
       if (this.armed.rawMode) {
-        // RAW MODE: the user explicitly disabled ALL safety checks for this
-        // snipe. No honeypot simulation, no tax check — fire on symbol match.
-        this.log('warn', 'RAW MODE — all safety checks skipped. Firing immediately.');
+        // RAW MODE: the user explicitly disabled ALL safety features for this
+        // snipe. No honeypot simulation, no tax check, no quoter/min-out (the
+        // executor sends amountOutMinimum=0 = accept ANY price). Pure speed.
+        this.log('warn', 'RAW MODE — all safety checks skipped, min-out=0 (any price accepted). Firing immediately.');
       } else {
         // A just-created pool often can't be quoted until liquidity lands, and its
         // PoolCreated event only fires once — so a blocked match RETRIES the gate
@@ -145,7 +146,8 @@ export class Sniper extends EventEmitter {
         slippagePct: this.armed.slippagePct,
         maxFeePerGasGwei: this.armed.maxFeePerGasGwei,
         maxPriorityFeePerGasGwei: this.armed.maxPriorityFeePerGasGwei,
-        deadlineSeconds: this.armed.deadlineSeconds
+        deadlineSeconds: this.armed.deadlineSeconds,
+        rawMode: Boolean(this.armed.rawMode)
       });
 
       this.log('success', `TX sent: ${res.hash}`, { hash: res.hash, explorer: `${this.cfg.chain.explorer}/tx/${res.hash}` });

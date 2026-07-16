@@ -35,13 +35,15 @@ async function computeMinOut(publicClient, cfg, tokenOut, amountInWei, feeTier, 
 export async function buildAndSendBuyUniversal({
   publicClient, walletClient, account, cfg,
   tokenOut, feeTier, amountEth, slippagePct,
-  maxFeePerGasGwei, maxPriorityFeePerGasGwei, deadlineSeconds
+  maxFeePerGasGwei, maxPriorityFeePerGasGwei, deadlineSeconds,
+  rawMode
 }) {
   const router = cfg.dex.universalRouter;
   if (!router || /^0x0+$/.test(router)) throw new Error('universalRouter not set in config.json.');
 
   const amountIn = parseEther(String(amountEth));
-  const minOut = await computeMinOut(publicClient, cfg, tokenOut, amountIn, feeTier, slippagePct);
+  // RAW MODE: skip the quoter round-trip entirely and accept ANY price (minOut=0).
+  const minOut = rawMode ? 0n : await computeMinOut(publicClient, cfg, tokenOut, amountIn, feeTier, slippagePct);
 
   // V3 path: WETH -> fee -> tokenOut
   const path = encodePacked(

@@ -19,8 +19,10 @@ public RPC and DEX router — it is **not** connected to your Robinhood account.
   launch isn't abandoned just because liquidity landed a few blocks late. Set
   `safety.enabled: false` for raw speed — no checks, fires on first symbol match.
   You can also go raw **per snipe** without touching config: the red **RAW MODE** checkbox
-  in the app, or `--raw` on the headless runner. Raw mode skips every check — honeypots
-  included — so it's entirely on you.
+  in the app, or `--raw` on the headless runner. Raw mode turns off EVERY safety feature:
+  no honeypot/tax simulation, no price quote, and `amountOutMinimum = 0` — the buy accepts
+  **any** price, including one token for all your ETH. It is the fastest path (no quoter
+  round-trip before firing) and the most exposed. Entirely on you.
 - **Contract addresses are filled in and verified.** `config.json` ships with the real
   Robinhood Chain Uniswap v3 addresses (factory, SwapRouter02, QuoterV2) and canonical WETH,
   confirmed against Uniswap + Robinhood docs and checked to have live contract code on-chain.
