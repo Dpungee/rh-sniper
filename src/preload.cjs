@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   importKey: (privateKey, password) => ipcRenderer.invoke('key:import', { privateKey, password }),
   unlock: (password) => ipcRenderer.invoke('key:unlock', { password }),
   arm: (params) => ipcRenderer.invoke('snipe:arm', params),
+  portfolio: () => ipcRenderer.invoke('portfolio:get'),
   disarm: () => ipcRenderer.invoke('snipe:disarm'),
   onLog: (cb) => ipcRenderer.on('log', (_e, d) => cb(d)),
   onState: (cb) => ipcRenderer.on('state', (_e, d) => cb(d)),

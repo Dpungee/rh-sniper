@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Sniper } from './engine/sniper.js';
 import { keystoreExists, saveKey, unlock, savedAddress } from './engine/keystore.js';
-import { loadConfig } from './engine/chain.js';
+import { loadConfig, makeHttpPublicClient } from './engine/chain.js';
+import { getPortfolio } from './engine/portfolio.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -84,4 +85,12 @@ ipcMain.handle('snipe:disarm', () => {
 
 ipcMain.handle('snipe:pending', () => {
   return { pending: ensureSniper().pendingSnipe() };
+});
+
+ipcMain.handle('portfolio:get', async () => {
+  const address = savedAddress();
+  if (!address) throw new Error('No wallet imported yet.');
+  const cfg = loadConfig();
+  const p = await getPortfolio(makeHttpPublicClient(cfg), cfg, address);
+  return { ...p, explorer: cfg.chain.explorer };
 });

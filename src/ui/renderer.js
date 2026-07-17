@@ -91,4 +91,36 @@ $('armBtn')?.addEventListener('click', async ()=>{
 
 $('disarmBtn')?.addEventListener('click', async ()=>{ await window.api.disarm(); });
 
+// ---- Holdings & PNL ----
+const fmt = (n, dp=6) => (n===null||n===undefined) ? '?' : (Number(n).toFixed(dp).replace(/\.?0+$/,'') || '0');
+
+async function refreshPortfolio(){
+  const btn = $('pfBtn'); btn.disabled = true; btn.textContent = '…';
+  try{
+    const p = await window.api.portfolio();
+    const t = p.totals;
+    const pnlCls = t.pnlEth >= 0 ? 'pf-up' : 'pf-down';
+    $('pfTotals').innerHTML =
+      `wallet <b>${fmt(p.ethBalance,4)} ETH</b> · tokens <b>${fmt(t.valueEth,4)} ETH</b>` +
+      (t.costEth ? ` · cost ${fmt(t.costEth,4)} · <span class="${pnlCls}">PNL ${t.pnlEth>=0?'+':''}${fmt(t.pnlEth,4)} ETH</span>` : '');
+    const list = $('pfList'); list.innerHTML = '';
+    if (!p.holdings.length){ list.innerHTML = '<div class="muted small">no token holdings</div>'; return; }
+    for (const h of p.holdings){
+      const row = document.createElement('div');
+      row.className = 'pf-row';
+      const val = h.valueEth===null ? '<span class="muted">unquotable</span>' : `${fmt(h.valueEth,4)} ETH`;
+      const pnl = h.pnlEth===null ? '' :
+        `<span class="${h.pnlEth>=0?'pf-up':'pf-down'}">${h.pnlEth>=0?'+':''}${fmt(h.pnlEth,4)} (${h.pnlPct>=0?'+':''}${fmt(h.pnlPct,1)}%)</span>`;
+      row.innerHTML = `<a class="pf-sym" target="_blank" href="${p.explorer}/token/${h.token}">$${h.symbol}</a>` +
+        `<span class="pf-bal muted">${h.balanceFmt>=1e6?h.balanceFmt.toExponential(2):fmt(h.balanceFmt,2)}</span>` +
+        `<span class="pf-val">${val}</span><span class="pf-pnl">${pnl}</span>`;
+      list.appendChild(row);
+    }
+  }catch(e){ $('pfTotals').textContent = e.message; }
+  finally{ btn.disabled = false; btn.textContent = 'refresh'; }
+}
+$('pfBtn')?.addEventListener('click', refreshPortfolio);
+// Auto-refresh after a fill lands.
+window.api.onFired(()=> setTimeout(refreshPortfolio, 4000));
+
 init();

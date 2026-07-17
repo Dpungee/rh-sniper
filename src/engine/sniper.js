@@ -12,6 +12,8 @@ import { tickerMatches, normalizeTicker } from './resolver.js';
 import { passesSafety } from './safety.js';
 import { buildAndSendBuy } from './swap.js';
 import { buildAndSendBuyUniversal } from './swapUniversal.js';
+import { recordFill, tokensReceived } from './trades.js';
+import { formatEther, parseEther } from 'viem';
 
 // A pending (armed) snipe is persisted here so that if the app is closed or the
 // machine restarts mid-watch, unlocking the wallet automatically resumes it.
@@ -211,6 +213,29 @@ export class Sniper extends EventEmitter {
 
       if (receipt?.status === 'success') {
         this.log('success', `CONFIRMED in block ${receipt.blockNumber}. Bought $${t.symbol}.`);
+        // Journal the fill for the portfolio/PNL view. Parse the receipt for
+        // what we ACTUALLY received (handles fee-on-transfer weirdness).
+        try {
+          const got = tokensReceived(receipt, t.token, this.account.address);
+          const ethIn = parseEther(String(this.armed.amountEth));
+          recordFill({
+            token: t.token,
+            symbol: t.symbol,
+            feeTier: t.feeTier,
+            txHash: res.hash,
+            blockNumber: Number(receipt.blockNumber),
+            ethIn: ethIn.toString(),
+            tokensOut: got.toString(),
+            ts: Date.now()
+          });
+          if (got > 0n) {
+            this.log('info', `Fill: ${formatEther(ethIn)} ETH -> ${got} raw units of $${t.symbol}. Run the portfolio view for live PNL.`);
+          } else {
+            this.log('warn', 'Fill recorded, but no incoming token transfer found in the receipt — check the tx on the explorer.');
+          }
+        } catch (e) {
+          this.log('warn', `Could not journal the fill: ${e.message}`);
+        }
       } else if (receipt) {
         this.log('error', `Transaction reverted (${res.hash}).`);
       }

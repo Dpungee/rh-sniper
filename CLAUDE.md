@@ -74,6 +74,16 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
   (amountOutMinimum=0, accept any price; saves the quoter RPC round-trip). Persists with
   pending.json. Calldata structure verified unchanged with minOut=0 (round-trip decode).
 
+## Portfolio / PNL
+- `trades.js`: append-only fill journal at `~/.rh-sniper/trades.json`; `tokensReceived()`
+  sums the receipt's Transfer logs to the buyer (handles fee-on-transfer). sniper.js
+  records a fill on every confirmed buy.
+- `portfolio.js`: holdings via `alchemy_getTokenBalances` (verified supported on this
+  chain; falls back to balanceOf over journaled tokens on public RPC), valued token->WETH
+  via QuoterV2 across fee tiers (journal's tier first). Unquotable = null, never 0.
+  PNL = live value minus journaled cost; sells outside the app are not tracked.
+- Surfaces: `npm run portfolio [-- 0xADDR]`, UI "Holdings & PNL" panel (`portfolio:get` IPC).
+
 ## Conventions
 - ES modules everywhere (`"type": "module"`). Electron preload MUST stay CommonJS →
   it is `src/preload.cjs`; don't rename it to `.js`.

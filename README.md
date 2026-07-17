@@ -116,6 +116,21 @@ What's left in **your** hands (not code):
   than a co-located bot.
 - **`dex.gasLimit`** must stay comfortably above a real swap (~200–300k); too low = out-of-gas.
 
+## Holdings & PNL
+
+Every confirmed snipe is journaled (`~/.rh-sniper/trades.json`: ETH in, tokens actually
+received parsed from the receipt, tx, block). The portfolio view shows what the wallet
+holds, its live ETH value (each token quoted back to WETH via the QuoterV2), and
+unrealized PNL vs. what the sniper paid:
+
+- **In the app** — the "Holdings & PNL" panel (refresh button; auto-refreshes after a fill).
+- **Terminal / VPS** — `npm run portfolio` (or `npm run portfolio -- 0xADDRESS` for any address).
+
+Notes: tokens with no liquidity path to WETH show as *unquotable* rather than 0. PNL only
+covers buys made by this sniper — manual trades and airdrops have no cost basis. Holdings
+enumeration uses `alchemy_getTokenBalances` when an Alchemy key is set; without one it
+falls back to checking only tokens the sniper has bought.
+
 ## Smart slippage
 
 A fixed slippage % is a blind guess at launch. With **SMART slippage** (on by default —
