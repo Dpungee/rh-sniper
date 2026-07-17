@@ -75,7 +75,13 @@ The wrappers restart the sniper if it crashes and stop cleanly once the snipe co
 (exit 0) or on a setup error like a wrong password (exit 2). For fully unattended runs set
 `RH_PASSWORD` in `.env` so it can unlock without a prompt — **throwaway wallet only**, since
 anyone who can read that file can unlock the key. On Windows, disable sleep while it runs
-(`powercfg /change standby-timeout-ac 0`); on a VPS use tmux/systemd so it outlives SSH.
+(`powercfg /change standby-timeout-ac 0`).
+
+**Deploying to a VPS** (recommended for real speed — this chain rewards proximity to the
+sequencer): see [DEPLOY.md](DEPLOY.md) for the full copy-paste guide, including the
+systemd service (`deploy/rh-sniper.service`, auto-start on boot + restart on crash),
+`npm run latency` to pick the fastest region empirically, and staging snipes with
+`npm run snipe -- --arm-only --ticker X`.
 
 Import your key (UI import screen or `npm run keystore import`), unlock, enter a ticker,
 set amount/gas/slippage, hit **SNIPE**. The app arms, listens, and fires on the first match.

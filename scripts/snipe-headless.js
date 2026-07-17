@@ -10,7 +10,7 @@
 //   1 = crash / unexpected exit — restart me
 //   2 = bad usage / no keystore / wrong password — do NOT restart (fix first)
 import readline from 'node:readline';
-import { Sniper } from '../src/engine/sniper.js';
+import { Sniper, savePending } from '../src/engine/sniper.js';
 import { unlock, keystoreExists, savedAddress } from '../src/engine/keystore.js';
 
 function parseArgs(argv) {
@@ -38,6 +38,26 @@ const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  // --arm-only: stage the snipe in pending.json and exit — no wallet, no
+  // listener. A running (or restarted) --resume service picks it up.
+  if (args['arm-only']) {
+    if (!args.ticker) { console.error('--arm-only requires --ticker.'); process.exit(2); }
+    const { loadConfig } = await import('../src/engine/chain.js');
+    const cfg = loadConfig();
+    savePending({
+      ticker: String(args.ticker),
+      amountEth: String(args.amount ?? cfg.defaults.amountEth),
+      slippagePct: Number(args.slippage ?? cfg.defaults.slippagePct),
+      maxFeePerGasGwei: Number(args.gas ?? cfg.defaults.maxFeePerGasGwei),
+      maxPriorityFeePerGasGwei: Number(args.prio ?? cfg.defaults.maxPriorityFeePerGasGwei),
+      deadlineSeconds: Number(args.deadline ?? cfg.defaults.deadlineSeconds),
+      rawMode: Boolean(args.raw),
+      smartSlippage: !args['no-smart']
+    });
+    console.log(`Staged snipe for $${String(args.ticker).toUpperCase()} in pending.json. Restart the service (or run --resume) to arm it.`);
+    process.exit(0);
+  }
 
   if (!keystoreExists()) {
     console.error('No keystore found. Import a key first: npm run keystore import');
@@ -97,6 +117,7 @@ async function main() {
   } else if (!sniper.armed) {
     console.error('Usage: npm run snipe -- --ticker SYMBOL [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI] [--raw] [--no-smart]');
     console.error('       npm run snipe -- --resume');
+    console.error('       npm run snipe -- --arm-only --ticker SYMBOL [...]   (stage only; a --resume service arms it)');
     console.error('  --raw       turn ALL safety checks off (no honeypot/tax simulation, min-out 0)');
     console.error('  --no-smart  disable the smart-slippage ladder (use your % as a fixed value)');
     process.exit(2);

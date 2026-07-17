@@ -31,6 +31,13 @@ function clearPending() {
   try { fs.rmSync(PENDING_PATH, { force: true }); } catch { /* best-effort */ }
 }
 
+// Write a snipe to pending.json WITHOUT starting a listener (no wallet needed).
+// Used by `snipe-headless --arm-only`: stage a snipe, then let the service's
+// --resume pick it up on its next (re)start.
+export function savePending(params) {
+  writePending({ ...params, ticker: normalizeTicker(params.ticker) });
+}
+
 // Did this send fail on a PRICE check (min-out / slippage revert)? Only these
 // are safe to retry with a wider tolerance. Anything else (insufficient funds,
 // nonce, gas, RPC trouble) must NOT be retried blindly.

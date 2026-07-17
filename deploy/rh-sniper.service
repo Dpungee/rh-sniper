@@ -1,0 +1,40 @@
+# RH Chain Sniper — systemd service (Linux VPS)
+#
+# Runs the headless sniper in --resume mode: it arms whatever snipe is staged
+# in ~/.rh-sniper/pending.json and listens until fill or cancel. Survives
+# crashes (auto-restart) and reboots (enable it). See DEPLOY.md for setup.
+#
+# Exit-code contract (matches scripts/snipe-headless.js):
+#   0 = snipe completed or cancelled  -> stay stopped (success)
+#   2 = setup issue (nothing staged, bad password) -> stay stopped, fix first
+#   1 / crash                         -> restart after 5s
+#
+# Install (after editing the two %PLACEHOLDER% paths below):
+#   sudo cp deploy/rh-sniper.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable rh-sniper     # start on boot
+#   sudo systemctl start rh-sniper
+# Logs:  journalctl -u rh-sniper -f
+
+[Unit]
+Description=RH Chain Sniper (headless)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# EDIT THESE TWO LINES: your VPS username and the repo path
+User=%USERNAME%
+WorkingDirectory=%REPO_PATH%
+ExecStart=/usr/bin/env node scripts/snipe-headless.js --resume
+Restart=on-failure
+RestartSec=5
+# exit 2 (nothing staged / setup error) counts as success -> no restart loop
+SuccessExitStatus=2
+# RH_PASSWORD comes from the repo's .env (loaded by the app itself).
+# Hardening: the process gets no new privileges and a private /tmp.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
