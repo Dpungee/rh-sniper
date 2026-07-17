@@ -8,6 +8,7 @@
     "start": "electron .",
     "dryrun": "node scripts/dryrun.js",
     "snipe": "node scripts/snipe-headless.js",
+    "latency": "node scripts/latency.js",
     "keystore": "node scripts/keystore-cli.js"
   },
   "license": "MIT",
