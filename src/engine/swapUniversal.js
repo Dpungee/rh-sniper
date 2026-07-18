@@ -57,9 +57,13 @@ export async function buildAndSendBuyUniversal({
     [{ type: 'address' }, { type: 'uint256' }],
     [ADDRESS_THIS, amountIn]                 // wrap msg.value, keep WETH in router
   );
+  // NOTE: Robinhood Chain's UniversalRouter is a FORK — V3_SWAP_EXACT_IN takes a
+  // 6th field, uint256[] minHopPriceX36 (per-hop price floors; empty = skip).
+  // The standard 5-field encoding reverts with SliceOutOfBounds. Found via
+  // eth_simulateV1 against the deployed router (2026-07-18).
   const swapInput = encodeAbiParameters(
-    [{ type: 'address' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'bytes' }, { type: 'bool' }],
-    [MSG_SENDER, amountIn, minOut, path, false]  // recipient=you, payerIsUser=false (router holds WETH)
+    [{ type: 'address' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'bytes' }, { type: 'bool' }, { type: 'uint256[]' }],
+    [MSG_SENDER, amountIn, minOut, path, false, []]  // recipient=you, payerIsUser=false (router holds WETH)
   );
 
   const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineSeconds || 60));

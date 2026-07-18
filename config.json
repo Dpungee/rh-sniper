@@ -45,6 +45,24 @@
     "note": "Runs buy+sell quote simulation before firing; blocks likely honeypots / >50% round-trip tax. Set false for raw speed (no checks). Brand-new pools can't be quoted until liquidity lands, so a blocked match is RECHECKED every retryMs up to retries times (default: 20 x 3s = 1 min window) before giving up on that token; the sniper stays armed either way."
   },
 
+  "virtuals": {
+    "enabled": true,
+    "bonding": "0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007",
+    "frouter": "0xca6395246b4382ba70f886526dd9a9de984f6081",
+    "ffactory": "0xFC2E4Da3EdB2E18100473339c763705d263D20A9",
+    "virtualToken": "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31",
+    "wethVirtualPair": "0xd95e8e2cd04c207625c6f23c974d365a5f3a91d3",
+    "uniV2Factory": "0x8bcEaA40B9AcdfAedF85AdF4FF01F5Ad6517937f",
+    "note": "Virtuals Protocol launchpad on Robinhood Chain (BondingV5 stack). Addresses discovered + verified on-chain 2026-07-18 against live preLaunch/buy/launch transactions. Bonding-stage buys are paid in VIRTUAL; the sniper pre-funds VIRTUAL at arm time so firing is one tx."
+  },
+
+  "taxWatch": {
+    "maxTaxPct": 5,
+    "checkMs": 2000,
+    "maxWaitMs": 1800000,
+    "note": "Per-snipe TAX WATCH option: when a launch opens with an anti-sniper tax, wait and fire the moment it clears. Virtuals: reads FRouter.hasAntiSniperTax(pair) (authoritative). DEX tokens: simulates the real buy via eth_simulateV1 and measures effective transfer tax vs the quoter; fires when <= maxTaxPct. Gives up after maxWaitMs (default 30 min)."
+  },
+
   "smartSlippage": {
     "maxPct": 50,
     "widenFactor": 2,

@@ -84,7 +84,8 @@ $('armBtn')?.addEventListener('click', async ()=>{
     maxPriorityFeePerGasGwei: $('prio').value.trim(),
     deadlineSeconds: cfg.defaults.deadlineSeconds,
     rawMode: $('rawMode').checked,
-    smartSlippage: $('smartSlippage').checked
+    smartSlippage: $('smartSlippage').checked,
+    taxWatch: $('taxWatch').checked
   };
   try{ await window.api.arm(params); }catch(e){ alert(e.message); }
 });

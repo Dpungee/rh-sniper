@@ -131,6 +131,33 @@ covers buys made by this sniper — manual trades and airdrops have no cost basi
 enumeration uses `alchemy_getTokenBalances` when an Alchemy key is set; without one it
 falls back to checking only tokens the sniper has bought.
 
+## Virtuals launchpad + TAX WATCH
+
+The sniper watches **two venues** while armed:
+
+1. **Uniswap v3** — classic new-pool detection (as before).
+2. **The Virtuals Protocol launchpad** (BondingV5 on Robinhood Chain, watched by default;
+   `--no-virtuals` / config `virtuals.enabled` to disable). Agent launches are detected at
+   `PreLaunched` (announced in the log) and bought the moment `Launched` opens trading.
+   Bonding-stage buys are paid in VIRTUAL, so the bot converts your ETH budget to VIRTUAL
+   and approves the router **at arm time** — the actual snipe is a single `Bonding.buy` tx.
+   If you disarm, the VIRTUAL stays in your wallet (swap it back manually if you want ETH).
+
+**TAX WATCH** (on by default; checkbox in the app / `--no-tax-watch` headless): many
+launches open with an anti-sniper tax designed to punish instant apes. With tax watch on,
+a matched token is **not** bought while the tax is hot:
+
+- **Virtuals tokens**: reads `FRouter.hasAntiSniperTax(pair)` on-chain — the same flag
+  graduation waits on — and fires the second it flips off.
+- **DEX tokens**: simulates the real buy via `eth_simulateV1` every `taxWatch.checkMs`
+  (2s) and measures the effective transfer tax (tokens actually received vs. quoted);
+  fires when it drops to `taxWatch.maxTaxPct` (default 5%) or below.
+- Gives up after `taxWatch.maxWaitMs` (default 30 min) and goes back to listening.
+
+⚠ This chain's UniversalRouter is a **fork**: `V3_SWAP_EXACT_IN` takes a 6th field
+(`uint256[] minHopPriceX36`). The executors encode it (empty = skip per-hop checks).
+Standard Uniswap UR encodings revert with `SliceOutOfBounds` here.
+
 ## Smart slippage
 
 A fixed slippage % is a blind guess at launch. With **SMART slippage** (on by default —

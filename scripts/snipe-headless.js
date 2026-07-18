@@ -53,7 +53,9 @@ async function main() {
       maxPriorityFeePerGasGwei: Number(args.prio ?? cfg.defaults.maxPriorityFeePerGasGwei),
       deadlineSeconds: Number(args.deadline ?? cfg.defaults.deadlineSeconds),
       rawMode: Boolean(args.raw),
-      smartSlippage: !args['no-smart']
+      smartSlippage: !args['no-smart'],
+      taxWatch: !args['no-tax-watch'],
+      watchVirtuals: !args['no-virtuals']
     });
     console.log(`Staged snipe for $${String(args.ticker).toUpperCase()} in pending.json. Restart the service (or run --resume) to arm it.`);
     process.exit(0);
@@ -112,14 +114,18 @@ async function main() {
       maxPriorityFeePerGasGwei: Number(args.prio ?? cfg.defaults.maxPriorityFeePerGasGwei),
       deadlineSeconds: Number(args.deadline ?? cfg.defaults.deadlineSeconds),
       rawMode: Boolean(args.raw), // --raw = ALL safety checks off for this snipe
-      smartSlippage: !args['no-smart'] // smart slippage ladder ON by default; --no-smart = fixed %
+      smartSlippage: !args['no-smart'], // smart slippage ladder ON by default; --no-smart = fixed %
+      taxWatch: !args['no-tax-watch'],  // wait out anti-sniper taxes by default
+      watchVirtuals: !args['no-virtuals'] // watch the Virtuals launchpad by default
     });
   } else if (!sniper.armed) {
     console.error('Usage: npm run snipe -- --ticker SYMBOL [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI] [--raw] [--no-smart]');
     console.error('       npm run snipe -- --resume');
     console.error('       npm run snipe -- --arm-only --ticker SYMBOL [...]   (stage only; a --resume service arms it)');
-    console.error('  --raw       turn ALL safety checks off (no honeypot/tax simulation, min-out 0)');
-    console.error('  --no-smart  disable the smart-slippage ladder (use your % as a fixed value)');
+    console.error('  --raw           turn ALL safety checks off (no honeypot/tax simulation, min-out 0)');
+    console.error('  --no-smart      disable the smart-slippage ladder (use your % as a fixed value)');
+    console.error('  --no-tax-watch  fire even while an anti-sniper launch tax is active');
+    console.error('  --no-virtuals   ignore the Virtuals launchpad (watch the DEX only)');
     process.exit(2);
   }
 

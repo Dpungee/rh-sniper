@@ -112,6 +112,30 @@ concurrently (`handleLogs`); both executors pass an explicit `dex.gasLimit` to s
 `eth_estimateGas` (a round-trip AND a fresh-pool revert source). Further latency wins are
 infrastructural (paid RPC near the sequencer, low-latency host), not code.
 
+## Virtuals launchpad (discovered on-chain 2026-07-18)
+- BondingV5 proxy `0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007` (impl 0x319Dd22F...) is the
+  launch entrypoint: `preLaunch` → PreLaunched(token indexed, pair indexed, ...) topic
+  `0xb9ee8aa6...`; `launch` → Launched topic `0x6ed5dc54...` (sample launch tx
+  0xcb5dc832... = CYCLOSPORA, block 13142370). Bonding-stage tokens trade ONLY via
+  Bonding.buy/sell in VIRTUAL (FRouter `0xca639524...`, assetToken = VIRTUAL
+  `0xc6911796...`). buy signature: buy(amountIn, token, amountOutMin, deadline).
+- Buyers approve the FROUTER (not the bonding proxy). Verified end-to-end via
+  eth_simulateV1: wrap → WETH/VIRTUAL v2 pair swap (pair `0xd95e8e2c...`, direct
+  pair.swap — no working public v2 router; UR rejects this v2 factory) → approve →
+  Bonding.buy received agent tokens.
+- Anti-sniper tax is a launch param; live state = FRouter.hasAntiSniperTax(pair)
+  (selector 0xbaa5cca2). Graduation is gated on it → authoritative for tax watch.
+- virtuals.js implements detection + arm-time VIRTUAL funding + bonding buy;
+  taxWatch.js implements the wait-for-low-tax gate for both venues.
+
+## ⚠ UniversalRouter is a FORK (critical for swap encoding)
+Robinhood Chain's UR (`0x88767899...`) adds RouteSigner and — critically — a 6th
+V3_SWAP_EXACT_IN input field: `uint256[] minHopPriceX36` (empty array = skip checks).
+The standard 5-field Uniswap encoding reverts with SliceOutOfBounds(). Both
+swapUniversal.js and taxWatch.js encode 6 fields — do not "fix" them back to 5.
+Verify any executor change with eth_simulateV1 against the deployed router
+(supported on the Alchemy RPC), not just encode/decode round-trips.
+
 ## Known gotchas
 - Fresh pools often can't be quoted yet → `computeMinOut` returns `0n` (accept-any). That's
   intentional for launch-moment sniping but is the main money-risk knob; document any change.

@@ -13,6 +13,8 @@ import { passesSafety } from './safety.js';
 import { buildAndSendBuy } from './swap.js';
 import { buildAndSendBuyUniversal } from './swapUniversal.js';
 import { recordFill, tokensReceived } from './trades.js';
+import { startVirtualsListener, prepVirtualFunding, buildAndSendBondingBuy } from './virtuals.js';
+import { waitForLowTax } from './taxWatch.js';
 import { formatEther, parseEther } from 'viem';
 
 // A pending (armed) snipe is persisted here so that if the app is closed or the
@@ -61,6 +63,7 @@ export class Sniper extends EventEmitter {
     this.account = null;      // set via useAccount()
     this.walletClient = null;
     this.unwatch = null;
+    this.unwatchVirtuals = null;
     this.armed = null;        // active snipe params
     this.fired = false;
   }
@@ -107,11 +110,31 @@ export class Sniper extends EventEmitter {
       (e) => this.log('warn', `listener hiccup (auto-retrying): ${e.shortMessage || e.message}`),
       (level, msg) => this.log(level, msg)
     );
+
+    // Virtuals launchpad: second detection source + arm-time VIRTUAL funding
+    // (bonding buys are paid in VIRTUAL; funding now = single-tx fire later).
+    if (this.cfg.virtuals?.enabled && this.armed.watchVirtuals !== false) {
+      this.unwatchVirtuals = startVirtualsListener(
+        { httpClient: this.httpClient, wsClient: this.wsClient },
+        this.cfg,
+        (t) => this.onNewToken(t),
+        (e) => this.log('warn', `virtuals listener hiccup (auto-retrying): ${e.shortMessage || e.message}`),
+        (level, msg) => this.log(level, msg)
+      );
+      prepVirtualFunding({
+        publicClient: this.httpClient, walletClient: this.walletClient, account: this.account,
+        cfg: this.cfg, amountEth: this.armed.amountEth,
+        gas: { maxFeePerGasGwei: this.armed.maxFeePerGasGwei, maxPriorityFeePerGasGwei: this.armed.maxPriorityFeePerGasGwei },
+        log: (l, m) => this.log(l, m)
+      }).catch((e) => this.log('warn', `VIRTUAL pre-funding failed (will retry at fire time): ${e.shortMessage || e.message}`));
+    }
+
     this.emit('state', { armed: true, ticker: this.armed.ticker });
   }
 
   disarm() {
     if (this.unwatch) { try { this.unwatch(); } catch {} this.unwatch = null; }
+    if (this.unwatchVirtuals) { try { this.unwatchVirtuals(); } catch {} this.unwatchVirtuals = null; }
     this.armed = null;
     clearPending(); // an explicit cancel (or a confirmed fill) ends the watch for good
     this.emit('state', { armed: false });
@@ -119,14 +142,75 @@ export class Sniper extends EventEmitter {
   }
 
   async onNewToken(t) {
-    this.log('debug', `New pair: $${t.symbol} (${t.token}) pool=${t.pool} fee=${t.feeTier}`);
+    const src = t.source === 'virtuals' ? `virtuals:${t.phase}` : 'dex';
+    this.log('debug', `New token [${src}]: $${t.symbol} (${t.token}) pool=${t.pool}${t.feeTier ? ` fee=${t.feeTier}` : ''}`);
     if (!this.armed || this.fired) return;
     if (!tickerMatches(this.armed.ticker, t.symbol)) return;
 
-    this.log('info', `MATCH $${t.symbol} — verifying/executing...`);
+    // Virtuals pre-launch: the token exists on the launchpad but trading hasn't
+    // opened (Bonding.buy reverts until `launch`). Announce and keep listening —
+    // the Launched event for the same token will re-match and fire.
+    if (t.source === 'virtuals' && t.phase === 'prelaunch') {
+      this.log('info', `🎯 $${t.symbol} spotted on the VIRTUALS launchpad (pre-launch). Trading not open yet — watching for its Launched event...`);
+      return;
+    }
+
+    this.log('info', `MATCH $${t.symbol} [${src}] — verifying/executing...`);
     this.fired = true; // prevent double-fire
 
     try {
+      // TAX WATCH: if the launch opened with an anti-sniper tax, wait it out
+      // and fire the moment it clears (Virtuals: authoritative on-chain flag;
+      // DEX: simulated effective-tax measurement vs the ceiling).
+      if (this.armed.taxWatch !== false) {
+        const tw = await waitForLowTax(this.httpClient, this.cfg, t, {
+          account: this.account,
+          amountEth: this.armed.amountEth,
+          log: (l, m) => this.log(l, m),
+          shouldAbort: () => !this.armed
+        });
+        if (!this.armed) { this.fired = false; return; } // cancelled mid-wait
+        if (!tw.fire) {
+          this.log('warn', `Tax watch gave up on $${t.symbol}: ${tw.reason}. Still armed, still listening.`);
+          this.fired = false;
+          return;
+        }
+        this.log('info', `Tax watch GO: ${tw.reason}. Firing...`);
+      }
+
+      // Virtuals bonding-stage buy: single tx, paid in pre-funded VIRTUAL.
+      if (t.source === 'virtuals') {
+        this.log('debug', 'executor: Virtuals Bonding.buy (VIRTUAL-denominated)');
+        // Safety gate/quoter don't apply — no v3 pool exists during bonding.
+        const res = await buildAndSendBondingBuy({
+          publicClient: this.httpClient, walletClient: this.walletClient, account: this.account,
+          cfg: this.cfg, tokenOut: t.token,
+          maxFeePerGasGwei: this.armed.maxFeePerGasGwei,
+          maxPriorityFeePerGasGwei: this.armed.maxPriorityFeePerGasGwei,
+          deadlineSeconds: this.armed.deadlineSeconds
+        });
+        this.log('success', `TX sent (bonding buy, ${formatEther(res.amountIn)} VIRTUAL): ${res.hash}`, { hash: res.hash, explorer: `${this.cfg.chain.explorer}/tx/${res.hash}` });
+        this.emit('fired', { token: t, hash: res.hash });
+        const receipt = await this.httpClient.waitForTransactionReceipt({ hash: res.hash });
+        if (receipt.status === 'success') {
+          this.log('success', `CONFIRMED in block ${receipt.blockNumber}. Bought $${t.symbol} on the Virtuals launchpad.`);
+          try {
+            const got = tokensReceived(receipt, t.token, this.account.address);
+            recordFill({
+              token: t.token, symbol: t.symbol, feeTier: null, txHash: res.hash,
+              blockNumber: Number(receipt.blockNumber),
+              ethIn: parseEther(String(this.armed.amountEth)).toString(), // budget spent via VIRTUAL leg
+              tokensOut: got.toString(), ts: Date.now(), venue: 'virtuals'
+            });
+          } catch (e) { this.log('warn', `Could not journal the fill: ${e.message}`); }
+          this.disarm();
+        } else {
+          this.log('error', `Bonding buy reverted (${res.hash}). Still armed.`);
+          this.fired = false;
+        }
+        return;
+      }
+
       if (this.armed.rawMode) {
         // RAW MODE: the user explicitly disabled ALL safety features for this
         // snipe. No honeypot simulation, no tax check, no quoter/min-out (the
