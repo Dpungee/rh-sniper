@@ -56,6 +56,12 @@
     "note": "Virtuals Protocol launchpad on Robinhood Chain (BondingV5 stack). Addresses discovered + verified on-chain 2026-07-18 against live preLaunch/buy/launch transactions. Bonding-stage buys are paid in VIRTUAL; the sniper pre-funds VIRTUAL at arm time so firing is one tx."
   },
 
+  "liquidityWatch": {
+    "maxWaitMs": 1800000,
+    "pollMs": 1500,
+    "note": "Handles launchpads that create the pool BEFORE seeding LP. A v3 pool emits PoolCreated only once, so a matched-but-empty pool is held open (WS Mint-event subscription for instant reaction + liquidity() poll backstop) and fired the moment LP lands, instead of being abandoned. Pons (the chain's #1 launchpad) is atomic — pool+LP in one launchToken tx — so this normally no-ops on the fast path."
+  },
+
   "taxWatch": {
     "maxTaxPct": 5,
     "checkMs": 2000,

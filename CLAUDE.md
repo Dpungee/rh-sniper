@@ -128,6 +128,21 @@ infrastructural (paid RPC near the sequencer, low-latency host), not code.
 - virtuals.js implements detection + arm-time VIRTUAL funding + bonding buy;
   taxWatch.js implements the wait-for-low-tax gate for both venues.
 
+## Pons launchpad + deferred liquidity (measured 2026-07-27)
+- Pons (`PonsLaunchFactory 0xA5aAb3F0c6EeadF30Ef1D3Eb997108E976351feB`, method
+  `launchToken`) is the chain's dominant launchpad — 31/32 launches in a live 70s sample.
+  It creates pools on the SAME UniswapV3Factory we watch, so NO Pons-specific detection
+  code is needed. Verified: simulated buy of live Pons token $DIEGO via our executor =>
+  quotable, 0% tax.
+- CRITICAL empirical finding: only ~12/32 pools had liquidity at the instant PoolCreated
+  fired. PoolCreated fires once, so an empty pool must NOT be abandoned →
+  liquidityWatch.js holds the match open (WS Mint subscription + liquidity() poll) and
+  fires when LP lands. Funded pools take a ~0.3s fast path.
+- ⚠ This chain's v3 fork emits a NONSTANDARD Mint topic: ...d0bde (upstream: ...d0bae).
+  Verified by dumping raw pool logs. Don't "correct" it to the upstream constant.
+- Duplicate tickers are rampant on Pons (saw $HEARING x3, $PETER x2, $NANA x2 in 70s) —
+  reinforces that ticker-only matching can hit a scam token.
+
 ## ⚠ UniversalRouter is a FORK (critical for swap encoding)
 Robinhood Chain's UR (`0x88767899...`) adds RouteSigner and — critically — a 6th
 V3_SWAP_EXACT_IN input field: `uint256[] minHopPriceX36` (empty array = skip checks).

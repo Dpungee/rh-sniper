@@ -131,6 +131,26 @@ covers buys made by this sniper — manual trades and airdrops have no cost basi
 enumeration uses `alchemy_getTokenBalances` when an Alchemy key is set; without one it
 falls back to checking only tokens the sniper has bought.
 
+## Launchpad coverage (Pons, Virtuals, and any v3 launch)
+
+**Pons** — the chain's #1 launchpad (`PonsLaunchFactory`
+`0xA5aAb3F0c6EeadF30Ef1D3Eb997108E976351feB`) — needs no special support: its
+`launchToken` call creates the pool on the **same UniswapV3Factory this bot already
+watches**, so Pons launches are detected like any other. Verified by simulating a real buy
+of a live Pons token through the executor path (quotable, 0% tax, succeeds), and by live
+detection: **31 of 32 launches** seen in a 70-second window were Pons.
+
+**But liquidity is often NOT there at detection.** In that same live sample only **12 of 32**
+pools held liquidity the instant `PoolCreated` fired — the rest were created empty and
+seeded moments later. Since a v3 pool emits `PoolCreated` exactly once, abandoning an empty
+pool means losing that token forever. So a matched-but-empty pool is now **held open** by
+the liquidity watch (WS subscription on the pool's `Mint` event for instant reaction, plus a
+`liquidity()` poll backstop) and fires the moment LP lands, up to `liquidityWatch.maxWaitMs`
+(30 min). Already-funded pools take a fast path (~0.3 s) and are not delayed.
+
+⚠ This chain's Uniswap v3 fork emits a **nonstandard `Mint` topic** (ends `…d0bde`, not
+upstream's `…d0bae`). Code that watches for liquidity must use the fork's topic.
+
 ## Virtuals launchpad + TAX WATCH
 
 The sniper watches **two venues** while armed:

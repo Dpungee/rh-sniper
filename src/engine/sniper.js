@@ -15,6 +15,7 @@ import { buildAndSendBuyUniversal } from './swapUniversal.js';
 import { recordFill, tokensReceived } from './trades.js';
 import { startVirtualsListener, prepVirtualFunding, buildAndSendBondingBuy } from './virtuals.js';
 import { waitForLowTax } from './taxWatch.js';
+import { waitForLiquidity } from './liquidityWatch.js';
 import { formatEther, parseEther } from 'viem';
 
 // A pending (armed) snipe is persisted here so that if the app is closed or the
@@ -159,6 +160,25 @@ export class Sniper extends EventEmitter {
     this.fired = true; // prevent double-fire
 
     try {
+      // LIQUIDITY WATCH (DEX only): most launchpads seed LP in the same tx that
+      // creates the pool, but some create the pool first and add liquidity later.
+      // PoolCreated fires only once, so we hold this match open and fire the
+      // instant liquidity lands rather than abandoning the token.
+      if (t.source !== 'virtuals') {
+        const lw = await waitForLiquidity(
+          { httpClient: this.httpClient, wsClient: this.wsClient },
+          this.cfg, t.pool,
+          { log: (l, m) => this.log(l, m), shouldAbort: () => !this.armed }
+        );
+        if (!this.armed) { this.fired = false; return; } // cancelled mid-wait
+        if (!lw.ready) {
+          this.log('warn', `Liquidity watch gave up on $${t.symbol}: ${lw.reason}. Still armed, still listening.`);
+          this.fired = false;
+          return;
+        }
+        if (lw.reason !== 'pool already funded') this.log('info', `Liquidity GO: ${lw.reason}.`);
+      }
+
       // TAX WATCH: if the launch opened with an anti-sniper tax, wait it out
       // and fire the moment it clears (Virtuals: authoritative on-chain flag;
       // DEX: simulated effective-tax measurement vs the ceiling).
