@@ -148,7 +148,28 @@ launchpad — dropdown in the app, or headless:
 ```bash
 npm run snipe -- --ticker PEPE --amount 0.01 --pons          # Pons launches only
 npm run snipe -- --ticker PEPE --launchpad virtuals          # Virtuals only
+npm run snipe -- --ticker PEPE --launchpad pons,padB         # either of two pads
 ```
+
+Known launchpads (`config.json → launchpads`), found by tallying live launch traffic:
+
+| Key | Launchpad | Share of live sample |
+| --- | --- | --- |
+| `pons` | **Pons** (`PonsLaunchFactory`) — confirmed | ~76% |
+| `padB` | Launchpad B (`0x1fae…4ecb`, selector `0x026f2bf0`) — brand unconfirmed | ~18% |
+| `padC` | Launchpad C (`deployToken`) — brand unconfirmed | low |
+| `padD` | Launchpad D (`newTokenV6`) — brand unconfirmed | low |
+| `virtuals` | **Virtuals** (BondingV5) — confirmed, separate venue | n/a |
+
+Only `pons` and `virtuals` are confirmed brands (named and verified on the explorer). The
+others were identified purely by on-chain activity — their addresses and launch selectors
+are verified, but their public names are not, so they carry neutral labels. Rename them in
+`config.json` as you identify them; the UI dropdown is built from that file, so new or
+renamed entries appear automatically.
+
+Measured live: **93% of launches attributed** to a known launchpad in **38–70 ms**. The
+unattributed remainder were direct `NonfungiblePositionManager` pool creations — i.e. not
+launchpad launches at all, correctly left unmatched.
 
 Attribution comes from the launch transaction's receipt — both the tx target and every
 emitting log address, so a launch routed through an aggregator or multicall still resolves

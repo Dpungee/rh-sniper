@@ -15,7 +15,7 @@ import { buildAndSendBuyUniversal } from './swapUniversal.js';
 import { recordFill, tokensReceived } from './trades.js';
 import { startVirtualsListener, prepVirtualFunding, buildAndSendBondingBuy } from './virtuals.js';
 import { waitForLowTax } from './taxWatch.js';
-import { waitForLiquidity, inspectLaunchTx, matchesLaunchpad } from './liquidityWatch.js';
+import { waitForLiquidity, inspectLaunchTx, matchesLaunchpad, parseLaunchpads, launchpadLabel } from './liquidityWatch.js';
 import { formatEther, parseEther } from 'viem';
 
 // A pending (armed) snipe is persisted here so that if the app is closed or the
@@ -152,12 +152,11 @@ export class Sniper extends EventEmitter {
     // factory, so a DEX-launchpad filter (e.g. pons) must reject them here —
     // and vice versa — before any per-launch inspection.
     const wantPad = this.armed.launchpad || 'any';
-    if (wantPad !== 'any') {
-      const padCfg = this.cfg.launchpads?.[wantPad];
-      const padVenue = padCfg?.venue || 'dex';
+    const wantedPads = parseLaunchpads(this.cfg, wantPad);
+    if (wantedPads.length) {
       const thisVenue = t.source === 'virtuals' ? 'virtuals' : 'dex';
-      if (padVenue !== thisVenue) {
-        this.log('debug', `Skipping $${t.symbol} — ${thisVenue} launch, filter wants ${padCfg?.name || wantPad}.`);
+      if (!wantedPads.some((p) => (p.venue || 'dex') === thisVenue)) {
+        this.log('debug', `Skipping $${t.symbol} — ${thisVenue} launch, filter wants ${launchpadLabel(this.cfg, wantPad)}.`);
         return;
       }
     }
@@ -186,14 +185,12 @@ export class Sniper extends EventEmitter {
         // LAUNCHPAD FILTER: skip launches that didn't come from the chosen
         // launchpad. Checked before any waiting so a rejected launch costs
         // nothing and the sniper stays armed for the real one.
-        const want = this.armed.launchpad || 'any';
-        if (!matchesLaunchpad(this.cfg, want, launchInfo)) {
-          const name = this.cfg.launchpads?.[want]?.name || want;
-          this.log('info', `Skipping $${t.symbol} — not a ${name} launch (filter: ${want}). Still armed.`);
+        if (!matchesLaunchpad(this.cfg, wantPad, launchInfo)) {
+          this.log('info', `Skipping $${t.symbol} — not a ${launchpadLabel(this.cfg, wantPad)} launch (from ${(launchInfo.launchpad || 'unknown').slice(0, 10)}…). Still armed.`);
           this.fired = false;
           return;
         }
-        if (want !== 'any') this.log('info', `$${t.symbol} confirmed as a ${this.cfg.launchpads?.[want]?.name || want} launch.`);
+        if (wantedPads.length) this.log('info', `$${t.symbol} confirmed as a ${launchpadLabel(this.cfg, wantPad)} launch.`);
 
         const lw = await waitForLiquidity(
           { httpClient: this.httpClient, wsClient: this.wsClient },

@@ -69,7 +69,25 @@
       "address": "0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007",
       "note": "Virtuals Protocol BondingV5 proxy. Bonding-stage agent launches (VIRTUAL-denominated), not a DEX pool."
     },
-    "__NOTE__": "Per-snipe `launchpad` param filters which launchpad a snipe will accept: 'any' (default), or a key above. Attribution comes from the launch tx receipt (tx target + emitting log addresses, so aggregator/multicall routing still resolves), reusing the same receipt the liquidity gate already fetches — the filter costs no extra latency."
+    "padB": {
+      "name": "Launchpad B (0x1fae…4ecb)",
+      "venue": "dex",
+      "address": "0x1fAE6F162355Cf77bf7f23cB919130962daD4Ecb",
+      "note": "Second-busiest launchpad: 7 of 38 launches in a live sample (~18%). Unverified contract, launch selector 0x026f2bf0. Brand NOT confirmed — identified purely by on-chain activity."
+    },
+    "padC": {
+      "name": "Launchpad C (deployToken)",
+      "venue": "dex",
+      "address": "0x6e4910Ea5A04376032f6564dA9a9E4E88b7a87c1",
+      "note": "Launch method deployToken (selector 0x13d39311), plus collectFees. Low volume in sampling. Does NOT match Clanker's known deployToken selectors — brand unconfirmed."
+    },
+    "padD": {
+      "name": "Launchpad D (newTokenV6)",
+      "venue": "dex",
+      "address": "0x26605f322f7fF986f381bB9A6e3f5DAb0bEaEb09",
+      "note": "Launch method newTokenV6 (selector 0x8cb5772c). Seen launching $X01. Brand unconfirmed."
+    },
+    "__NOTE__": "Per-snipe `launchpad` param filters which launchpads a snipe accepts: 'any' (default), one key, or a comma-separated list (e.g. 'pons,padB'). Attribution comes from the launch tx receipt (tx target + emitting log addresses, so aggregator/multicall routing still resolves), reusing the same receipt the liquidity gate already fetches — the filter costs no extra latency. Only `pons` and `virtuals` have CONFIRMED brand identities (named/verified on the explorer); padB/padC/padD were found by tallying live launch traffic and their brands are unconfirmed — rename them freely as you identify them."
   },
 
   "liquidityWatch": {

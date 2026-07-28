@@ -145,8 +145,14 @@ infrastructural (paid RPC near the sequencer, low-latency host), not code.
   still stall a few seconds on a fresh pool; the actual buy goes to the sequencer (true
   state) and is unaffected — this is the speed cost of running gates on, and why raw mode
   is faster.
-- Launchpad filter: per-snipe `launchpad` param ('any'|'pons'|'virtuals', keys in
-  cfg.launchpads). Attribution via inspectLaunchTx() — ONE receipt fetch yields both the
+- Launchpad filter: per-snipe `launchpad` param — 'any', one key, or a comma-separated
+  list ('pons,padB'); keys are cfg.launchpads entries. Only pons/virtuals have CONFIRMED
+  brands; padB (0x1fae…4ecb, sel 0x026f2bf0, ~18% of launches), padC (deployToken, sel
+  0x13d39311 — does NOT match Clanker), padD (newTokenV6, sel 0x8cb5772c) were found by
+  tallying live traffic — addresses verified, brand names are not. Don't assert brands for
+  them without evidence. UI dropdown is generated from config (config:get exposes them).
+  Live-measured 93% attribution in 38-70ms; unattributed = direct NonfungiblePositionManager
+  pool creations, correctly not launchpad launches. Attribution via inspectLaunchTx() — ONE receipt fetch yields both the
   launchpad (tx.to + all emitting log addresses, so aggregator/multicall routing resolves)
   and `minted` for the liquidity gate, so filtering is latency-free. Venue check runs first
   (cfg.launchpads[x].venue) since Virtuals launches never touch the DEX factory. Verified

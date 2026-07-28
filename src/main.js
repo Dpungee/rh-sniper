@@ -55,6 +55,9 @@ ipcMain.handle('config:get', () => {
     dex: cfg.dex,
     defaults: cfg.defaults,
     safetyEnabled: !!cfg.safety?.enabled,
+    launchpads: Object.entries(cfg.launchpads || {})
+      .filter(([k, v]) => !k.startsWith('__') && v?.address)
+      .map(([k, v]) => ({ key: k, name: v.name || k })),
     hasKey: keystoreExists(),
     address: savedAddress(),
     routerSet: !/^0x0+$/.test(cfg.dex.router),

@@ -128,7 +128,8 @@ async function main() {
     console.error('  --no-tax-watch  fire even while an anti-sniper launch tax is active');
     console.error('  --no-virtuals   ignore the Virtuals launchpad (watch the DEX only)');
     console.error('  --pons          ONLY snipe Pons launches (alias for --launchpad pons)');
-    console.error('  --launchpad X   only accept launches from launchpad X (any|pons|virtuals)');
+    console.error('  --launchpad X   only accept launches from launchpad X; comma-separated for');
+    console.error('                  several (any|pons|virtuals|padB|padC|padD, e.g. "pons,padB")');
     process.exit(2);
   }
 

@@ -35,6 +35,14 @@ async function init(){
   if (!cfg.hasKey){ $('importBox').classList.remove('hidden'); }
   else { $('unlockBox').classList.remove('hidden'); $('lockedAddr').textContent = cfg.address; }
 
+  // Launchpad filter options come from config, so adding a launchpad there
+  // shows up here without touching the UI.
+  for (const p of (cfg.launchpads || [])) {
+    const o = document.createElement('option');
+    o.value = p.key; o.textContent = p.name + ' only';
+    $('launchpad').appendChild(o);
+  }
+
   // Prefill defaults
   $('amount').value = cfg.defaults.amountEth;
   $('slippage').value = cfg.defaults.slippagePct;

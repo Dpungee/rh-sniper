@@ -65,15 +65,32 @@ export async function mintedInTx(publicClient, txHash) {
   return (await inspectLaunchTx(publicClient, txHash)).minted;
 }
 
-// Does this launch belong to the named launchpad? `which` is a key in
-// cfg.launchpads (e.g. "pons"); "any" always passes.
+// Parse a launchpad filter into config entries. Accepts "any", a single key,
+// or a comma-separated list ("pons,padB"). Unknown keys are dropped rather than
+// silently blocking everything.
+export function parseLaunchpads(cfg, which) {
+  if (!which || which === 'any') return [];
+  const pads = cfg.launchpads || {};
+  return String(which)
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean)
+    .map((k) => (pads[k] ? { key: k, ...pads[k] } : null))
+    .filter((p) => p && p.address);
+}
+
+// Does this launch belong to any of the selected launchpads?
 export function matchesLaunchpad(cfg, which, info) {
-  if (!which || which === 'any') return true;
-  const known = (cfg.launchpads || {})[which];
-  if (!known) return true; // unknown filter name — don't silently block everything
-  const want = String(known.address || '').toLowerCase();
-  if (!want) return true;
-  return (info?.addresses || []).includes(want);
+  const wanted = parseLaunchpads(cfg, which);
+  if (!wanted.length) return true; // "any", or nothing resolvable
+  const seen = info?.addresses || [];
+  return wanted.some((p) => seen.includes(String(p.address).toLowerCase()));
+}
+
+// Human-readable name(s) for logging.
+export function launchpadLabel(cfg, which) {
+  const wanted = parseLaunchpads(cfg, which);
+  return wanted.length ? wanted.map((p) => p.name || p.key).join(' / ') : String(which);
 }
 
 // Resolve as soon as the pool holds liquidity. Returns { ready, reason }.
