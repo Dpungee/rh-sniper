@@ -31,14 +31,41 @@ export async function poolHasLiquidity(publicClient, pool) {
   }
 }
 
+// Did the pool-creating transaction ALSO mint liquidity? Most launchpads (Pons
+// included) are atomic: token + pool + LP in one tx. The receipt is proof the
+// LP exists, and it is available IMMEDIATELY — whereas an eth_call to
+// liquidity() can read 0 for several seconds afterwards while the RPC's state
+// catches up (measured up to 8s+ on live launches). Trusting the receipt is what
+// keeps an atomic snipe from being needlessly delayed by that lag.
+export async function mintedInTx(publicClient, txHash) {
+  if (!txHash) return false;
+  try {
+    const rec = await publicClient.getTransactionReceipt({ hash: txHash });
+    return rec.logs.some((l) => l.topics?.[0] === MINT_TOPIC);
+  } catch {
+    return false;
+  }
+}
+
 // Resolve as soon as the pool holds liquidity. Returns { ready, reason }.
 // Uses a WS subscription on the pool's Mint event for instant reaction, with a
 // polling backstop so a dropped socket can't make us miss the fill.
-export async function waitForLiquidity({ httpClient, wsClient }, cfg, pool, { log, shouldAbort } = {}) {
+export async function waitForLiquidity({ httpClient, wsClient }, cfg, pool, { log, shouldAbort, txHash } = {}) {
   if (!pool) return { ready: true, reason: 'no pool address to check' };
 
-  // Fast path: the common (atomic) case — already funded, don't wait at all.
-  if (await poolHasLiquidity(httpClient, pool)) return { ready: true, reason: 'pool already funded' };
+  // Fast path. Race two independent proofs of liquidity and take whichever
+  // answers first:
+  //   - the creating tx's receipt containing a Mint (atomic launch — instant,
+  //     immune to state lag)
+  //   - a live liquidity() read (covers pools funded in a later tx)
+  // Checking only liquidity() would stall an atomic snipe for seconds while the
+  // RPC catches up, which on an FCFS chain is the whole race.
+  const proofs = await Promise.all([
+    mintedInTx(httpClient, txHash),
+    poolHasLiquidity(httpClient, pool)
+  ]);
+  if (proofs[0]) return { ready: true, reason: 'LP minted in the launch tx' };
+  if (proofs[1]) return { ready: true, reason: 'pool already funded' };
 
   const lw = cfg.liquidityWatch || {};
   const maxWaitMs = Number(lw.maxWaitMs ?? 1800000); // 30 min

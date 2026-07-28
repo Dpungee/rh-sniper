@@ -134,10 +134,19 @@ infrastructural (paid RPC near the sequencer, low-latency host), not code.
   It creates pools on the SAME UniswapV3Factory we watch, so NO Pons-specific detection
   code is needed. Verified: simulated buy of live Pons token $DIEGO via our executor =>
   quotable, 0% tax.
-- CRITICAL empirical finding: only ~12/32 pools had liquidity at the instant PoolCreated
-  fired. PoolCreated fires once, so an empty pool must NOT be abandoned →
-  liquidityWatch.js holds the match open (WS Mint subscription + liquidity() poll) and
-  fires when LP lands. Funded pools take a ~0.3s fast path.
+- Pons launches are ATOMIC: 20/20 consecutive live launches minted LP in the same tx that
+  created the pool (verified from receipts). Zero true deferred-LP launches observed.
+- CRITICAL: eth_call state LAGS the chain. On 11/20 of those atomic launches,
+  pool.liquidity() still read 0 for 8s+ after the Mint was final in the receipt. Waiting on
+  liquidity() therefore costs seconds on an FCFS chain. waitForLiquidity() races the
+  creating tx's RECEIPT (Mint present => instant proof, lag-immune) against a liquidity()
+  read and takes whichever proves ready first — measured ~137ms avg, 297ms max, vs 8000ms+
+  before. Always pass txHash. Note the same lag affects the quoter, so safety/tax gates can
+  still stall a few seconds on a fresh pool; the actual buy goes to the sequencer (true
+  state) and is unaffected — this is the speed cost of running gates on, and why raw mode
+  is faster.
+- Deferred-LP pools (other launchpads) are still held open: WS Mint subscription +
+  liquidity() poll, 30 min cap, since PoolCreated fires only once.
 - ⚠ This chain's v3 fork emits a NONSTANDARD Mint topic: ...d0bde (upstream: ...d0bae).
   Verified by dumping raw pool logs. Don't "correct" it to the upstream constant.
 - Duplicate tickers are rampant on Pons (saw $HEARING x3, $PETER x2, $NANA x2 in 70s) —

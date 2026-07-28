@@ -168,7 +168,7 @@ export class Sniper extends EventEmitter {
         const lw = await waitForLiquidity(
           { httpClient: this.httpClient, wsClient: this.wsClient },
           this.cfg, t.pool,
-          { log: (l, m) => this.log(l, m), shouldAbort: () => !this.armed }
+          { log: (l, m) => this.log(l, m), shouldAbort: () => !this.armed, txHash: t.txHash }
         );
         if (!this.armed) { this.fired = false; return; } // cancelled mid-wait
         if (!lw.ready) {

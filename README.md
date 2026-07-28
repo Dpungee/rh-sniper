@@ -140,13 +140,26 @@ watches**, so Pons launches are detected like any other. Verified by simulating 
 of a live Pons token through the executor path (quotable, 0% tax, succeeds), and by live
 detection: **31 of 32 launches** seen in a 70-second window were Pons.
 
-**But liquidity is often NOT there at detection.** In that same live sample only **12 of 32**
-pools held liquidity the instant `PoolCreated` fired — the rest were created empty and
-seeded moments later. Since a v3 pool emits `PoolCreated` exactly once, abandoning an empty
-pool means losing that token forever. So a matched-but-empty pool is now **held open** by
-the liquidity watch (WS subscription on the pool's `Mint` event for instant reaction, plus a
-`liquidity()` poll backstop) and fires the moment LP lands, up to `liquidityWatch.maxWaitMs`
-(30 min). Already-funded pools take a fast path (~0.3 s) and are not delayed.
+**Pons launches are atomic** — measured across 20 consecutive live launches, every one
+minted LP in the *same transaction* that created the pool. So a detected Pons pool is
+tradeable immediately.
+
+**Beware the RPC state lag.** On 11 of those 20, an `eth_call` to the pool's `liquidity()`
+still returned **0 for several seconds** (8 s+) after the mint was already final in the
+receipt — the node's state view lags the chain. Naively waiting for `liquidity()` would
+hand every competitor an 8-second head start. So the liquidity gate races two proofs and
+takes whichever answers first:
+
+1. the creating tx's **receipt containing a `Mint`** (atomic launch — instant, lag-immune), or
+2. a live **`liquidity()`** read (covers pools genuinely funded in a later tx).
+
+Measured over live launches: the gate now clears in **~137 ms average** (max 297 ms).
+
+If a pool really is created empty (deferred LP — a pattern other launchpads use), the match
+is **held open** instead of abandoned: a WS subscription on that pool's `Mint` event fires
+the instant LP lands, with a `liquidity()` poll backstop, up to `liquidityWatch.maxWaitMs`
+(30 min). A v3 pool emits `PoolCreated` exactly once, so abandoning it would lose the token
+permanently.
 
 ⚠ This chain's Uniswap v3 fork emits a **nonstandard `Mint` topic** (ends `…d0bde`, not
 upstream's `…d0bae`). Code that watches for liquidity must use the fork's topic.
