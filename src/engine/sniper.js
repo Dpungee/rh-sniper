@@ -15,7 +15,7 @@ import { buildAndSendBuyUniversal } from './swapUniversal.js';
 import { recordFill, tokensReceived } from './trades.js';
 import { startVirtualsListener, prepVirtualFunding, buildAndSendBondingBuy } from './virtuals.js';
 import { waitForLowTax } from './taxWatch.js';
-import { waitForLiquidity } from './liquidityWatch.js';
+import { waitForLiquidity, inspectLaunchTx, matchesLaunchpad } from './liquidityWatch.js';
 import { formatEther, parseEther } from 'viem';
 
 // A pending (armed) snipe is persisted here so that if the app is closed or the
@@ -148,6 +148,20 @@ export class Sniper extends EventEmitter {
     if (!this.armed || this.fired) return;
     if (!tickerMatches(this.armed.ticker, t.symbol)) return;
 
+    // Venue-level launchpad filter. Virtuals launches never touch the DEX
+    // factory, so a DEX-launchpad filter (e.g. pons) must reject them here —
+    // and vice versa — before any per-launch inspection.
+    const wantPad = this.armed.launchpad || 'any';
+    if (wantPad !== 'any') {
+      const padCfg = this.cfg.launchpads?.[wantPad];
+      const padVenue = padCfg?.venue || 'dex';
+      const thisVenue = t.source === 'virtuals' ? 'virtuals' : 'dex';
+      if (padVenue !== thisVenue) {
+        this.log('debug', `Skipping $${t.symbol} — ${thisVenue} launch, filter wants ${padCfg?.name || wantPad}.`);
+        return;
+      }
+    }
+
     // Virtuals pre-launch: the token exists on the launchpad but trading hasn't
     // opened (Bonding.buy reverts until `launch`). Announce and keep listening —
     // the Launched event for the same token will re-match and fire.
@@ -165,10 +179,26 @@ export class Sniper extends EventEmitter {
       // PoolCreated fires only once, so we hold this match open and fire the
       // instant liquidity lands rather than abandoning the token.
       if (t.source !== 'virtuals') {
+        // ONE receipt fetch gives us both the launchpad (for the filter) and
+        // proof of whether LP was minted in the same tx (for the gate below).
+        const launchInfo = await inspectLaunchTx(this.httpClient, t.txHash);
+
+        // LAUNCHPAD FILTER: skip launches that didn't come from the chosen
+        // launchpad. Checked before any waiting so a rejected launch costs
+        // nothing and the sniper stays armed for the real one.
+        const want = this.armed.launchpad || 'any';
+        if (!matchesLaunchpad(this.cfg, want, launchInfo)) {
+          const name = this.cfg.launchpads?.[want]?.name || want;
+          this.log('info', `Skipping $${t.symbol} — not a ${name} launch (filter: ${want}). Still armed.`);
+          this.fired = false;
+          return;
+        }
+        if (want !== 'any') this.log('info', `$${t.symbol} confirmed as a ${this.cfg.launchpads?.[want]?.name || want} launch.`);
+
         const lw = await waitForLiquidity(
           { httpClient: this.httpClient, wsClient: this.wsClient },
           this.cfg, t.pool,
-          { log: (l, m) => this.log(l, m), shouldAbort: () => !this.armed, txHash: t.txHash }
+          { log: (l, m) => this.log(l, m), shouldAbort: () => !this.armed, launchInfo }
         );
         if (!this.armed) { this.fired = false; return; } // cancelled mid-wait
         if (!lw.ready) {

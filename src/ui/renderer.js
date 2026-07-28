@@ -85,7 +85,8 @@ $('armBtn')?.addEventListener('click', async ()=>{
     deadlineSeconds: cfg.defaults.deadlineSeconds,
     rawMode: $('rawMode').checked,
     smartSlippage: $('smartSlippage').checked,
-    taxWatch: $('taxWatch').checked
+    taxWatch: $('taxWatch').checked,
+    launchpad: $('launchpad').value
   };
   try{ await window.api.arm(params); }catch(e){ alert(e.message); }
 });

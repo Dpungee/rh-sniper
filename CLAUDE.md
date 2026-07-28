@@ -145,6 +145,12 @@ infrastructural (paid RPC near the sequencer, low-latency host), not code.
   still stall a few seconds on a fresh pool; the actual buy goes to the sequencer (true
   state) and is unaffected — this is the speed cost of running gates on, and why raw mode
   is faster.
+- Launchpad filter: per-snipe `launchpad` param ('any'|'pons'|'virtuals', keys in
+  cfg.launchpads). Attribution via inspectLaunchTx() — ONE receipt fetch yields both the
+  launchpad (tx.to + all emitting log addresses, so aggregator/multicall routing resolves)
+  and `minted` for the liquidity gate, so filtering is latency-free. Venue check runs first
+  (cfg.launchpads[x].venue) since Virtuals launches never touch the DEX factory. Verified
+  live: 8/8 Pons identified, rival launchpad (newTokenV6 proxy) rejected, 44-67ms total.
 - Deferred-LP pools (other launchpads) are still held open: WS Mint subscription +
   liquidity() poll, 30 min cap, since PoolCreated fires only once.
 - ⚠ This chain's v3 fork emits a NONSTANDARD Mint topic: ...d0bde (upstream: ...d0bae).

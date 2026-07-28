@@ -140,6 +140,26 @@ watches**, so Pons launches are detected like any other. Verified by simulating 
 of a live Pons token through the executor path (quotable, 0% tax, succeeds), and by live
 detection: **31 of 32 launches** seen in a 70-second window were Pons.
 
+### Launchpad filter
+
+By default a snipe accepts a matching ticker from **any** launch. To restrict it, pick a
+launchpad — dropdown in the app, or headless:
+
+```bash
+npm run snipe -- --ticker PEPE --amount 0.01 --pons          # Pons launches only
+npm run snipe -- --ticker PEPE --launchpad virtuals          # Virtuals only
+```
+
+Attribution comes from the launch transaction's receipt — both the tx target and every
+emitting log address, so a launch routed through an aggregator or multicall still resolves
+correctly. That receipt is the same one the liquidity gate already needs, so **the filter
+adds no latency** (measured 44–67 ms for filter + liquidity gate combined). Rejected
+launches cost nothing and leave the snipe armed for the real one.
+
+Known launchpads live in `config.json → launchpads`; add more by dropping in their factory
+address. Verified live: 8/8 Pons launches correctly identified, and a token from a rival
+launchpad (`newTokenV6` on a different proxy) correctly rejected.
+
 **Pons launches are atomic** — measured across 20 consecutive live launches, every one
 minted LP in the *same transaction* that created the pool. So a detected Pons pool is
 tradeable immediately.

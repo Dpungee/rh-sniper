@@ -56,6 +56,22 @@
     "note": "Virtuals Protocol launchpad on Robinhood Chain (BondingV5 stack). Addresses discovered + verified on-chain 2026-07-18 against live preLaunch/buy/launch transactions. Bonding-stage buys are paid in VIRTUAL; the sniper pre-funds VIRTUAL at arm time so firing is one tx."
   },
 
+  "launchpads": {
+    "pons": {
+      "name": "Pons",
+      "venue": "dex",
+      "address": "0xA5aAb3F0c6EeadF30Ef1D3Eb997108E976351feB",
+      "note": "PonsLaunchFactory (method launchToken). The chain's dominant launchpad — 31 of 32 launches in a live 70s sample. Creates the token, the v3 pool and the LP in one atomic tx."
+    },
+    "virtuals": {
+      "name": "Virtuals",
+      "venue": "virtuals",
+      "address": "0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007",
+      "note": "Virtuals Protocol BondingV5 proxy. Bonding-stage agent launches (VIRTUAL-denominated), not a DEX pool."
+    },
+    "__NOTE__": "Per-snipe `launchpad` param filters which launchpad a snipe will accept: 'any' (default), or a key above. Attribution comes from the launch tx receipt (tx target + emitting log addresses, so aggregator/multicall routing still resolves), reusing the same receipt the liquidity gate already fetches — the filter costs no extra latency."
+  },
+
   "liquidityWatch": {
     "maxWaitMs": 1800000,
     "pollMs": 1500,

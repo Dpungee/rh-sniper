@@ -55,7 +55,8 @@ async function main() {
       rawMode: Boolean(args.raw),
       smartSlippage: !args['no-smart'],
       taxWatch: !args['no-tax-watch'],
-      watchVirtuals: !args['no-virtuals']
+      watchVirtuals: !args['no-virtuals'],
+      launchpad: args.pons ? 'pons' : (args.launchpad || 'any')
     });
     console.log(`Staged snipe for $${String(args.ticker).toUpperCase()} in pending.json. Restart the service (or run --resume) to arm it.`);
     process.exit(0);
@@ -126,6 +127,8 @@ async function main() {
     console.error('  --no-smart      disable the smart-slippage ladder (use your % as a fixed value)');
     console.error('  --no-tax-watch  fire even while an anti-sniper launch tax is active');
     console.error('  --no-virtuals   ignore the Virtuals launchpad (watch the DEX only)');
+    console.error('  --pons          ONLY snipe Pons launches (alias for --launchpad pons)');
+    console.error('  --launchpad X   only accept launches from launchpad X (any|pons|virtuals)');
     process.exit(2);
   }
 

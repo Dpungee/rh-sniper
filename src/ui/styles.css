@@ -36,6 +36,11 @@ input:focus{border-color:var(--accent)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .grid2 > div{display:flex;flex-direction:column;gap:6px}
 
+.pad-row{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.pad-row select{background:var(--card2);border:1px solid var(--line);border-radius:8px;
+  color:var(--text);padding:10px 12px;font-size:14px;outline:none;width:100%}
+.pad-row select:focus{border-color:var(--accent)}
+
 .smart-row{display:flex;align-items:center;gap:10px;margin-top:2px;padding:10px 12px;
   background:#101a15;border:1px solid #1e3a2a;border-radius:8px;cursor:pointer;text-transform:none;letter-spacing:0}
 .smart-row input{width:auto;accent-color:var(--accent)}

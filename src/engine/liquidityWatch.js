@@ -31,41 +31,65 @@ export async function poolHasLiquidity(publicClient, pool) {
   }
 }
 
-// Did the pool-creating transaction ALSO mint liquidity? Most launchpads (Pons
-// included) are atomic: token + pool + LP in one tx. The receipt is proof the
-// LP exists, and it is available IMMEDIATELY — whereas an eth_call to
-// liquidity() can read 0 for several seconds afterwards while the RPC's state
-// catches up (measured up to 8s+ on live launches). Trusting the receipt is what
-// keeps an atomic snipe from being needlessly delayed by that lag.
-export async function mintedInTx(publicClient, txHash) {
-  if (!txHash) return false;
+// Inspect the pool-creating transaction ONCE and derive everything we need from
+// that single receipt fetch:
+//
+// - `minted`: did this tx also mint liquidity? Most launchpads (Pons included)
+//   are atomic: token + pool + LP in one tx. The receipt proves the LP exists
+//   and is available IMMEDIATELY — whereas an eth_call to liquidity() can read 0
+//   for seconds afterwards while the RPC's state catches up (measured 8s+ live).
+// - `launchpad`: which contract drove the launch, so a snipe can filter by it.
+//   Checked via the tx target AND the emitting log addresses, so a launch routed
+//   through an aggregator or multicall is still attributed correctly.
+//
+// Deriving both from one call keeps the launchpad filter latency-free.
+export async function inspectLaunchTx(publicClient, txHash) {
+  if (!txHash) return { minted: false, launchpad: null, addresses: [] };
   try {
     const rec = await publicClient.getTransactionReceipt({ hash: txHash });
-    return rec.logs.some((l) => l.topics?.[0] === MINT_TOPIC);
+    const addresses = new Set();
+    if (rec.to) addresses.add(rec.to.toLowerCase());
+    for (const l of rec.logs || []) if (l.address) addresses.add(l.address.toLowerCase());
+    return {
+      minted: (rec.logs || []).some((l) => l.topics?.[0] === MINT_TOPIC),
+      launchpad: rec.to ? rec.to.toLowerCase() : null,
+      addresses: [...addresses]
+    };
   } catch {
-    return false;
+    return { minted: false, launchpad: null, addresses: [] };
   }
+}
+
+// Back-compat helper.
+export async function mintedInTx(publicClient, txHash) {
+  return (await inspectLaunchTx(publicClient, txHash)).minted;
+}
+
+// Does this launch belong to the named launchpad? `which` is a key in
+// cfg.launchpads (e.g. "pons"); "any" always passes.
+export function matchesLaunchpad(cfg, which, info) {
+  if (!which || which === 'any') return true;
+  const known = (cfg.launchpads || {})[which];
+  if (!known) return true; // unknown filter name — don't silently block everything
+  const want = String(known.address || '').toLowerCase();
+  if (!want) return true;
+  return (info?.addresses || []).includes(want);
 }
 
 // Resolve as soon as the pool holds liquidity. Returns { ready, reason }.
 // Uses a WS subscription on the pool's Mint event for instant reaction, with a
 // polling backstop so a dropped socket can't make us miss the fill.
-export async function waitForLiquidity({ httpClient, wsClient }, cfg, pool, { log, shouldAbort, txHash } = {}) {
+export async function waitForLiquidity({ httpClient, wsClient }, cfg, pool, { log, shouldAbort, launchInfo } = {}) {
   if (!pool) return { ready: true, reason: 'no pool address to check' };
 
-  // Fast path. Race two independent proofs of liquidity and take whichever
-  // answers first:
+  // Fast path. Two independent proofs of liquidity; take whichever holds:
   //   - the creating tx's receipt containing a Mint (atomic launch — instant,
-  //     immune to state lag)
+  //     immune to state lag; already fetched for the launchpad filter)
   //   - a live liquidity() read (covers pools funded in a later tx)
   // Checking only liquidity() would stall an atomic snipe for seconds while the
   // RPC catches up, which on an FCFS chain is the whole race.
-  const proofs = await Promise.all([
-    mintedInTx(httpClient, txHash),
-    poolHasLiquidity(httpClient, pool)
-  ]);
-  if (proofs[0]) return { ready: true, reason: 'LP minted in the launch tx' };
-  if (proofs[1]) return { ready: true, reason: 'pool already funded' };
+  if (launchInfo?.minted) return { ready: true, reason: 'LP minted in the launch tx' };
+  if (await poolHasLiquidity(httpClient, pool)) return { ready: true, reason: 'pool already funded' };
 
   const lw = cfg.liquidityWatch || {};
   const maxWaitMs = Number(lw.maxWaitMs ?? 1800000); // 30 min
