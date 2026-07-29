@@ -2,6 +2,7 @@
 // Built for unattended 24/7 operation on an always-on machine / VPS.
 //
 //   npm run snipe -- --ticker PEPE --amount 0.01 --slippage 15
+//   npm run snipe -- --ticker 0xC05e...7139 --amount 0.01   (exact contract address)
 //   npm run snipe -- --resume            # resume the snipe saved in ~/.rh-sniper/pending.json
 //
 // Password: env RH_PASSWORD (or .env) for unattended runs; prompts if absent.
@@ -59,7 +60,9 @@ async function main() {
       watchV4: !args['no-v4'],
       launchpad: args.pons ? 'pons' : (args.launchpad || 'any')
     });
-    console.log(`Staged snipe for $${String(args.ticker).toUpperCase()} in pending.json. Restart the service (or run --resume) to arm it.`);
+    const tgt = String(args.ticker);
+    const label = /^0x[0-9a-fA-F]{40}$/.test(tgt) ? `CA ${tgt}` : `$${tgt.toUpperCase()}`;
+    console.log(`Staged snipe for ${label} in pending.json. Restart the service (or run --resume) to arm it.`);
     process.exit(0);
   }
 
@@ -118,10 +121,14 @@ async function main() {
       rawMode: Boolean(args.raw), // --raw = ALL safety checks off for this snipe
       smartSlippage: !args['no-smart'], // smart slippage ladder ON by default; --no-smart = fixed %
       taxWatch: !args['no-tax-watch'],  // wait out anti-sniper taxes by default
-      watchVirtuals: !args['no-virtuals'] // watch the Virtuals launchpad by default
+      watchVirtuals: !args['no-virtuals'], // watch the Virtuals launchpad by default
+      watchV4: !args['no-v4'],          // watch Uniswap v4 (letscash.fun) by default
+      launchpad: args.pons ? 'pons' : (args.launchpad || 'any')
     });
   } else if (!sniper.armed) {
-    console.error('Usage: npm run snipe -- --ticker SYMBOL [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI] [--raw] [--no-smart]');
+    console.error('Usage: npm run snipe -- --ticker SYMBOL|0xCONTRACT [--amount ETH] [--slippage PCT] [--gas GWEI] [--prio GWEI] [--raw] [--no-smart]');
+    console.error('  --ticker accepts a symbol (PEPE) or an exact contract address (0x...40 hex).');
+    console.error('  An address is unique and cannot be spoofed by a copycat ticker — prefer it when known.');
     console.error('       npm run snipe -- --resume');
     console.error('       npm run snipe -- --arm-only --ticker SYMBOL [...]   (stage only; a --resume service arms it)');
     console.error('  --raw           turn ALL safety checks off (no honeypot/tax simulation, min-out 0)');

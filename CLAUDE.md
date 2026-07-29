@@ -100,6 +100,18 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
   selector/commands/params, and (ideally) `simulateContract` against the real contracts.
 - Never test real buys with real funds — use a throwaway wallet + tiny amount.
 
+## Target modes (resolver.js)
+- A snipe's `ticker` field holds EITHER a ticker OR a contract address; `isAddressTarget()`
+  discriminates (0x + 40 hex) and `targetMatches(target, candidate)` compares against
+  `candidate.token` (address mode) or `candidate.symbol` (ticker mode). Use these rather
+  than tickerMatches directly. `normalizeTarget` lowercases addresses / uppercases tickers.
+- Address mode works on all venues and additionally: (a) bypasses the launchpad filter (a
+  CA is already unique, so filtering can only cause a miss — logged, not silent), and
+  (b) runs `findExistingPool()` at arm time across fee tiers, firing immediately if the
+  pool already exists — a pool's creation event fires ONCE, so arming late would otherwise
+  hang forever. v4 pools can't be looked up that way (poolId needs hook+tickSpacing), so
+  those still rely on the Initialize event.
+
 ## Speed model (important — this is a sequencer L2, not L1)
 Robinhood Chain is Arbitrum Orbit: **FCFS sequencer, no public mempool, priority fee = 0**
 (verified via RPC: `newPendingTransactions` → "notifications not supported", `txpool_status`

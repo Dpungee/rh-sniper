@@ -81,9 +81,26 @@ $('unlockBtn')?.addEventListener('click', async ()=>{
   }catch(e){ alert(e.message); }
 });
 
+// Reflect what kind of target was typed: an exact contract, or a ticker.
+const isAddr = (v) => /^0x[0-9a-fA-F]{40}$/.test(String(v||'').trim());
+$('ticker')?.addEventListener('input', ()=>{
+  const v = $('ticker').value.trim();
+  const addr = isAddr(v);
+  $('tickerSigil').textContent = addr ? '#' : '$';
+  $('ticker').style.fontSize = addr ? '13px' : '';
+  $('ticker').style.textTransform = addr ? 'none' : '';
+  $('targetHint').textContent = addr
+    ? '✓ Exact contract address — cannot be spoofed by a copycat ticker.'
+    : (v.length && !/^0x/i.test(v)
+        ? 'Ticker mode: symbols are NOT unique — a copycat with the same ticker can be hit instead.'
+        : 'A contract address is exact — it can\'t be spoofed by a copycat ticker.');
+  $('targetHint').className = 'small ' + (addr ? 'pf-up' : (v.length && !/^0x/i.test(v) ? 'warn' : 'muted'));
+});
+
 $('armBtn')?.addEventListener('click', async ()=>{
   const ticker = $('ticker').value.trim();
-  if (!ticker){ alert('Enter a ticker.'); return; }
+  if (!ticker){ alert('Enter a ticker or contract address.'); return; }
+  if (/^0x/i.test(ticker) && !isAddr(ticker)){ alert('That looks like a contract address but is not valid.\n\nAn address must be 0x followed by 40 hex characters.'); return; }
   const params = {
     ticker,
     amountEth: $('amount').value.trim(),

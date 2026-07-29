@@ -36,11 +36,12 @@
     <!-- Sniper -->
     <section id="mainPane" class="pane hidden">
       <div class="card">
-        <label>Ticker</label>
+        <label>Ticker or contract address</label>
         <div class="ticker-row">
-          <span class="dollar">$</span>
-          <input id="ticker" type="text" placeholder="CASHCAT" autocomplete="off" spellcheck="false" />
+          <span class="dollar" id="tickerSigil">$</span>
+          <input id="ticker" type="text" placeholder="CASHCAT  or  0xC05e…7139" autocomplete="off" spellcheck="false" />
         </div>
+        <div id="targetHint" class="small muted">A contract address is exact — it can't be spoofed by a copycat ticker.</div>
 
         <div class="grid2">
           <div>

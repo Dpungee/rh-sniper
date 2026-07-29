@@ -131,6 +131,32 @@ covers buys made by this sniper — manual trades and airdrops have no cost basi
 enumeration uses `alchemy_getTokenBalances` when an Alchemy key is set; without one it
 falls back to checking only tokens the sniper has bought.
 
+## Snipe by contract address (recommended when you know the CA)
+
+The target field takes **either a ticker or a contract address**:
+
+```bash
+npm run snipe -- --ticker PEPE --amount 0.01                              # ticker
+npm run snipe -- --ticker 0xC05e8894bF585862b7Cf2e1363c46E7546d37139 --amount 0.01   # exact CA
+```
+
+An address is **unique and cannot be spoofed**, which removes the single biggest risk in
+ticker sniping: copycats deploying the same symbol to catch snipers (duplicates are
+rampant — `$HEARING` appeared three times in one 70-second sample). If you have the CA
+ahead of launch, always prefer it.
+
+Address mode works across **all three venues** (v3, v4, Virtuals) and:
+
+- **Pre-arms on a contract that doesn't exist yet** — the usual case for a pre-announced CA.
+- **Fires immediately if the token is already live.** A pool emits its creation event once,
+  so arming after launch would otherwise wait forever; the sniper checks the factory across
+  fee tiers at arm time and buys straight away if a pool already exists.
+- **Ignores the launchpad filter** (announced in the log) — the CA already identifies the
+  token uniquely, so a filter could only cause a miss if it launches somewhere unexpected.
+
+The app shows which mode you're in as you type: `#` and a green confirmation for an
+address, `$` and a warning about copycats for a ticker.
+
 ## Launchpad coverage (Pons, Virtuals, and any v3 launch)
 
 **Pons** — the chain's #1 launchpad (`PonsLaunchFactory`

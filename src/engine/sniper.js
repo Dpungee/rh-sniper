@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { makeHttpPublicClient, makeWsClient, makeWalletClient, loadConfig } from './chain.js';
 import { startPairListener } from './discovery.js';
-import { tickerMatches, normalizeTicker } from './resolver.js';
+import { targetMatches, normalizeTarget, describeTarget, isAddressTarget } from './resolver.js';
 import { passesSafety } from './safety.js';
 import { buildAndSendBuy } from './swap.js';
 import { buildAndSendBuyUniversal } from './swapUniversal.js';
@@ -17,7 +17,8 @@ import { startVirtualsListener, prepVirtualFunding, buildAndSendBondingBuy } fro
 import { startV4Listener, buildAndSendBuyV4, liquidityAddedInLogs } from './v4.js';
 import { waitForLowTax } from './taxWatch.js';
 import { waitForLiquidity, inspectLaunchTx, matchesLaunchpad, parseLaunchpads, launchpadLabel } from './liquidityWatch.js';
-import { formatEther, parseEther } from 'viem';
+import { formatEther, parseEther, getContract } from 'viem';
+import { UNIV3_FACTORY_ABI, ERC20_ABI } from './abis.js';
 
 // A pending (armed) snipe is persisted here so that if the app is closed or the
 // machine restarts mid-watch, unlocking the wallet automatically resumes it.
@@ -41,7 +42,7 @@ function clearPending() {
 // Used by `snipe-headless --arm-only`: stage a snipe, then let the service's
 // --resume pick it up on its next (re)start.
 export function savePending(params) {
-  writePending({ ...params, ticker: normalizeTicker(params.ticker) });
+  writePending({ ...params, ticker: normalizeTarget(params.ticker) });
 }
 
 // Did this send fail on a PRICE check (min-out / slippage revert)? Only these
@@ -89,7 +90,7 @@ export class Sniper extends EventEmitter {
     // Resume a snipe that was armed before the app/machine restarted.
     const pending = this.pendingSnipe();
     if (pending && pending.ticker) {
-      this.log('info', `Resuming saved snipe for $${normalizeTicker(pending.ticker)} from previous session.`);
+      this.log('info', `Resuming saved snipe for ${describeTarget(pending.ticker)} from previous session.`);
       try { this.arm(pending); } catch (e) { this.log('error', `Could not resume snipe: ${e.message}`); }
     }
   }
@@ -99,12 +100,14 @@ export class Sniper extends EventEmitter {
     if (!this.account) throw new Error('Unlock a wallet first.');
     if (this.unwatch) this.disarm();
 
-    this.armed = { ...params, ticker: normalizeTicker(params.ticker) };
+    this.armed = { ...params, ticker: normalizeTarget(params.ticker) };
     this.fired = false;
     writePending(this.armed); // survive a restart until cancel or fire
     const mode = this.wsClient ? 'live WS + polling' : 'polling (public RPC)';
     const raw = this.armed.rawMode ? ' ⚠ RAW MODE (no safety checks)' : '';
-    this.log('info', `Armed for $${this.armed.ticker} — ${params.amountEth} ETH, ${params.slippagePct}% slippage.${raw} Listening (${mode}) until it launches or you cancel...`);
+    const targetDesc = describeTarget(this.armed.ticker);
+    const precise = isAddressTarget(this.armed.ticker) ? ' (exact contract — immune to ticker spoofing)' : '';
+    this.log('info', `Armed for ${targetDesc}${precise} — ${params.amountEth} ETH, ${params.slippagePct}% slippage.${raw} Listening (${mode}) until it launches or you cancel...`);
 
     this.unwatch = startPairListener(
       { http: this.httpClient, ws: this.wsClient },
@@ -144,7 +147,43 @@ export class Sniper extends EventEmitter {
       }).catch((e) => this.log('warn', `VIRTUAL pre-funding failed (will retry at fire time): ${e.shortMessage || e.message}`));
     }
 
+    // Address target: it may already be live (pool created before we armed, so
+    // its one-time event is long gone). Check now and fire if so.
+    if (isAddressTarget(this.armed.ticker)) {
+      const target = this.armed.ticker;
+      this.findExistingPool(target).then(async (found) => {
+        if (!found || !this.armed || this.fired) return;
+        let symbol = '?';
+        try { symbol = String(await getContract({ address: target, abi: ERC20_ABI, client: this.httpClient }).read.symbol()); } catch {}
+        this.log('info', `${describeTarget(target)} already has a live pool ($${symbol}, fee ${found.feeTier}) — buying now instead of waiting for a launch event.`);
+        this.onNewToken({
+          source: 'dex', token: target, symbol,
+          pool: found.pool, feeTier: found.feeTier,
+          txHash: null, blockNumber: null
+        });
+      }).catch((e) => this.log('debug', `existing-pool check failed: ${e.shortMessage || e.message}`));
+    }
+
     this.emit('state', { armed: true, ticker: this.armed.ticker });
+  }
+
+  // Address targets only: is this token ALREADY tradeable? A pool created
+  // before we armed has already emitted its one-and-only event, so waiting for
+  // that event would hang forever. Checks the v3 factory across fee tiers.
+  // (v4 pools can't be looked up this way — their poolId needs the hook and
+  // tickSpacing, which aren't knowable in advance; those still rely on events.)
+  async findExistingPool(token) {
+    const factory = this.cfg.dex.factory;
+    if (!factory || /^0x0+$/.test(factory)) return null;
+    const f = getContract({ address: factory, abi: UNIV3_FACTORY_ABI, client: this.httpClient });
+    const tiers = [10000, 3000, 500, 100];
+    for (const fee of tiers) {
+      try {
+        const pool = await f.read.getPool([token, this.cfg.chain.wrappedNative, fee]);
+        if (pool && !/^0x0+$/.test(pool)) return { pool, feeTier: fee };
+      } catch { /* try next tier */ }
+    }
+    return null;
   }
 
   disarm() {
@@ -161,12 +200,19 @@ export class Sniper extends EventEmitter {
     const src = t.source === 'virtuals' ? `virtuals:${t.phase}` : 'dex';
     this.log('debug', `New token [${src}]: $${t.symbol} (${t.token}) pool=${t.pool}${t.feeTier ? ` fee=${t.feeTier}` : ''}`);
     if (!this.armed || this.fired) return;
-    if (!tickerMatches(this.armed.ticker, t.symbol)) return;
+    if (!targetMatches(this.armed.ticker, t)) return;
 
     // Venue-level launchpad filter. Virtuals launches never touch the DEX
     // factory, so a DEX-launchpad filter (e.g. pons) must reject them here —
     // and vice versa — before any per-launch inspection.
-    const wantPad = this.armed.launchpad || 'any';
+    // A contract address already identifies the token uniquely, so a launchpad
+    // filter can only cause a miss (e.g. it launches somewhere unexpected).
+    // Address targets bypass it — announced, not silently.
+    const addressMode = isAddressTarget(this.armed.ticker);
+    const wantPad = addressMode ? 'any' : (this.armed.launchpad || 'any');
+    if (addressMode && (this.armed.launchpad || 'any') !== 'any') {
+      this.log('debug', 'Address target: ignoring the launchpad filter (the CA is already unique).');
+    }
     const wantedPads = parseLaunchpads(this.cfg, wantPad);
     if (wantedPads.length) {
       const thisVenue = t.source === 'virtuals' ? 'virtuals' : t.source === 'v4' ? 'v4' : 'dex';

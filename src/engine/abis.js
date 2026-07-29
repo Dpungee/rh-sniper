@@ -12,6 +12,13 @@ export const ERC20_ABI = [
 // Uniswap V3 factory: emitted when a new pool is created.
 export const UNIV3_FACTORY_ABI = [
   {
+    type: 'function',
+    name: 'getPool',
+    stateMutability: 'view',
+    inputs: [{ type: 'address' }, { type: 'address' }, { type: 'uint24' }],
+    outputs: [{ type: 'address' }]
+  },
+  {
     type: 'event',
     name: 'PoolCreated',
     inputs: [
