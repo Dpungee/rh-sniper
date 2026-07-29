@@ -56,6 +56,7 @@ async function main() {
       smartSlippage: !args['no-smart'],
       taxWatch: !args['no-tax-watch'],
       watchVirtuals: !args['no-virtuals'],
+      watchV4: !args['no-v4'],
       launchpad: args.pons ? 'pons' : (args.launchpad || 'any')
     });
     console.log(`Staged snipe for $${String(args.ticker).toUpperCase()} in pending.json. Restart the service (or run --resume) to arm it.`);
@@ -126,7 +127,8 @@ async function main() {
     console.error('  --raw           turn ALL safety checks off (no honeypot/tax simulation, min-out 0)');
     console.error('  --no-smart      disable the smart-slippage ladder (use your % as a fixed value)');
     console.error('  --no-tax-watch  fire even while an anti-sniper launch tax is active');
-    console.error('  --no-virtuals   ignore the Virtuals launchpad (watch the DEX only)');
+    console.error('  --no-virtuals   ignore the Virtuals launchpad');
+    console.error('  --no-v4         ignore Uniswap v4 pools (letscash.fun and other v4 launches)');
     console.error('  --pons          ONLY snipe Pons launches (alias for --launchpad pons)');
     console.error('  --launchpad X   only accept launches from launchpad X; comma-separated for');
     console.error('                  several (any|pons|virtuals|padB|padC|padD, e.g. "pons,padB")');

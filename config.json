@@ -56,6 +56,12 @@
     "note": "Virtuals Protocol launchpad on Robinhood Chain (BondingV5 stack). Addresses discovered + verified on-chain 2026-07-18 against live preLaunch/buy/launch transactions. Bonding-stage buys are paid in VIRTUAL; the sniper pre-funds VIRTUAL at arm time so firing is one tx."
   },
 
+  "v4": {
+    "enabled": true,
+    "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "note": "Uniswap v4 singleton PoolManager (source-verified on the explorer). v4 pools never emit PoolCreated on the v3 factory, so they need their own listener on the PoolManager's Initialize event. v4 pools trade NATIVE ETH (currency0 = address(0)) and are bought via UniversalRouter's V4_SWAP command (0x10). letscash.fun launches here."
+  },
+
   "launchpads": {
     "pons": {
       "name": "Pons",
@@ -68,6 +74,13 @@
       "venue": "virtuals",
       "address": "0xd4cCBFA37e2f35611b3042e4096Ad7a3459Bd007",
       "note": "Virtuals Protocol BondingV5 proxy. Bonding-stage agent launches (VIRTUAL-denominated), not a DEX pool."
+    },
+    "letscash": {
+      "name": "letscash.fun",
+      "venue": "v4",
+      "address": "0x5bd1Fbe78a78fe8236fa00CF48fbEBA74ae34661",
+      "hook": "0xEfe669814e5Eec33406Bd50ffa8331618D076aEc",
+      "note": "letscash.fun factory (ERC1967Proxy, methods launch/launchDividend) — CONFIRMED via their docs + on-chain trace. Launches on UNISWAP V4: deploys the token, creates and seeds the v4 pool and locks liquidity in one tx, with CashCatHook taking fees in ETH. Token addresses are vanity-suffixed 'cc'."
     },
     "padB": {
       "name": "Launchpad B (0x1fae…4ecb)",

@@ -164,6 +164,25 @@ infrastructural (paid RPC near the sequencer, low-latency host), not code.
 - Duplicate tickers are rampant on Pons (saw $HEARING x3, $PETER x2, $NANA x2 in 70s) —
   reinforces that ticker-only matching can hit a scam token.
 
+## Uniswap v4 venue (v4.js) — letscash.fun
+- v4 pools live in the singleton PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`
+  and NEVER emit PoolCreated on the v3 factory — they need their own listener on
+  `Initialize` (topic 0xdd466e67…, verified). Without it, v4 launches are invisible.
+- Detection: decodeInitialize() -> PoolKey {currency0, currency1, fee, tickSpacing, hooks}.
+  currency0/1 are INDEXED (topics 2/3); fee/tickSpacing/hooks come from data. Pick the
+  non-base side as the token — check BOTH native (address(0)) and WETH, or a WETH-paired
+  pool mis-reports WETH as the launch.
+- Execution: UniversalRouter command V4_SWAP (0x10), input = abi.encode(bytes actions,
+  bytes[] params) with actions SWAP_EXACT_IN_SINGLE(0x06) SETTLE_ALL(0x0c) TAKE_ALL(0x0f).
+  Pays NATIVE ETH as msg.value (no wrapping). Verified by eth_simulateV1 against a live
+  letscash pool (received 190k tokens). Executor throws if the pool isn't native-paired.
+- No v3 quoter exists for v4 => safety gate / smart-slippage / tax watch do NOT apply;
+  v4 buys use min-out 0 and the sniper logs that plainly. Don't silently skip that warning.
+- Liquidity proof for v4 = ModifyLiquidity (topic 0xf208f491…) in the launch tx, since
+  there is no per-pool contract to call liquidity() on (`pool` is a bytes32 poolId).
+- letscash.fun factory `0x5bd1Fbe78a78fe8236fa00CF48fbEBA74ae34661` (launch/launchDividend),
+  hook `0xEfe669814e5Eec33406Bd50ffa8331618D076aEc`. Token addresses vanity-end in "cc".
+
 ## ⚠ UniversalRouter is a FORK (critical for swap encoding)
 Robinhood Chain's UR (`0x88767899...`) adds RouteSigner and — critically — a 6th
 V3_SWAP_EXACT_IN input field: `uint256[] minHopPriceX36` (empty array = skip checks).

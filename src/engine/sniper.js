@@ -14,6 +14,7 @@ import { buildAndSendBuy } from './swap.js';
 import { buildAndSendBuyUniversal } from './swapUniversal.js';
 import { recordFill, tokensReceived } from './trades.js';
 import { startVirtualsListener, prepVirtualFunding, buildAndSendBondingBuy } from './virtuals.js';
+import { startV4Listener, buildAndSendBuyV4, liquidityAddedInLogs } from './v4.js';
 import { waitForLowTax } from './taxWatch.js';
 import { waitForLiquidity, inspectLaunchTx, matchesLaunchpad, parseLaunchpads, launchpadLabel } from './liquidityWatch.js';
 import { formatEther, parseEther } from 'viem';
@@ -65,6 +66,7 @@ export class Sniper extends EventEmitter {
     this.walletClient = null;
     this.unwatch = null;
     this.unwatchVirtuals = null;
+    this.unwatchV4 = null;
     this.armed = null;        // active snipe params
     this.fired = false;
   }
@@ -112,6 +114,18 @@ export class Sniper extends EventEmitter {
       (level, msg) => this.log(level, msg)
     );
 
+    // Uniswap v4: pools live in a singleton PoolManager and never touch the v3
+    // factory, so they need their own listener (letscash.fun launches here).
+    if (this.cfg.v4?.enabled && this.armed.watchV4 !== false) {
+      this.unwatchV4 = startV4Listener(
+        { httpClient: this.httpClient, wsClient: this.wsClient },
+        this.cfg,
+        (t) => this.onNewToken(t),
+        (e) => this.log('warn', `v4 listener hiccup (auto-retrying): ${e.shortMessage || e.message}`),
+        (level, msg) => this.log(level, msg)
+      );
+    }
+
     // Virtuals launchpad: second detection source + arm-time VIRTUAL funding
     // (bonding buys are paid in VIRTUAL; funding now = single-tx fire later).
     if (this.cfg.virtuals?.enabled && this.armed.watchVirtuals !== false) {
@@ -136,6 +150,7 @@ export class Sniper extends EventEmitter {
   disarm() {
     if (this.unwatch) { try { this.unwatch(); } catch {} this.unwatch = null; }
     if (this.unwatchVirtuals) { try { this.unwatchVirtuals(); } catch {} this.unwatchVirtuals = null; }
+    if (this.unwatchV4) { try { this.unwatchV4(); } catch {} this.unwatchV4 = null; }
     this.armed = null;
     clearPending(); // an explicit cancel (or a confirmed fill) ends the watch for good
     this.emit('state', { armed: false });
@@ -154,7 +169,7 @@ export class Sniper extends EventEmitter {
     const wantPad = this.armed.launchpad || 'any';
     const wantedPads = parseLaunchpads(this.cfg, wantPad);
     if (wantedPads.length) {
-      const thisVenue = t.source === 'virtuals' ? 'virtuals' : 'dex';
+      const thisVenue = t.source === 'virtuals' ? 'virtuals' : t.source === 'v4' ? 'v4' : 'dex';
       if (!wantedPads.some((p) => (p.venue || 'dex') === thisVenue)) {
         this.log('debug', `Skipping $${t.symbol} — ${thisVenue} launch, filter wants ${launchpadLabel(this.cfg, wantPad)}.`);
         return;
@@ -181,6 +196,9 @@ export class Sniper extends EventEmitter {
         // ONE receipt fetch gives us both the launchpad (for the filter) and
         // proof of whether LP was minted in the same tx (for the gate below).
         const launchInfo = await inspectLaunchTx(this.httpClient, t.txHash);
+        // v4 liquidity lives in the PoolManager, so the v3 Mint topic won't
+        // appear — ModifyLiquidity in the launch tx is the equivalent proof.
+        if (t.source === 'v4' && liquidityAddedInLogs(launchInfo.logs)) launchInfo.minted = true;
 
         // LAUNCHPAD FILTER: skip launches that didn't come from the chosen
         // launchpad. Checked before any waiting so a rejected launch costs
@@ -223,6 +241,41 @@ export class Sniper extends EventEmitter {
           return;
         }
         this.log('info', `Tax watch GO: ${tw.reason}. Firing...`);
+      }
+
+      // Uniswap v4 buy: native ETH in, via UniversalRouter V4_SWAP. There is no
+      // v3 pool to quote, so the v3 safety gate / slippage ladder don't apply.
+      if (t.source === 'v4') {
+        this.log('debug', 'executor: UniversalRouter V4_SWAP (native ETH)');
+        if (!this.armed.rawMode) this.log('warn', 'v4 pool: honeypot gate and quoter-based slippage are not available here — buying with min-out 0.');
+        const res = await buildAndSendBuyV4({
+          walletClient: this.walletClient, account: this.account, cfg: this.cfg,
+          poolKey: t.poolKey,
+          amountIn: parseEther(String(this.armed.amountEth)),
+          minOut: 0n,
+          maxFeePerGasGwei: this.armed.maxFeePerGasGwei,
+          maxPriorityFeePerGasGwei: this.armed.maxPriorityFeePerGasGwei,
+          deadlineSeconds: this.armed.deadlineSeconds
+        });
+        this.log('success', `TX sent (v4 swap): ${res.hash}`, { hash: res.hash, explorer: `${this.cfg.chain.explorer}/tx/${res.hash}` });
+        this.emit('fired', { token: t, hash: res.hash });
+        const receipt = await this.httpClient.waitForTransactionReceipt({ hash: res.hash });
+        if (receipt.status === 'success') {
+          this.log('success', `CONFIRMED in block ${receipt.blockNumber}. Bought $${t.symbol} (Uniswap v4).`);
+          try {
+            const got = tokensReceived(receipt, t.token, this.account.address);
+            recordFill({
+              token: t.token, symbol: t.symbol, feeTier: t.feeTier, txHash: res.hash,
+              blockNumber: Number(receipt.blockNumber),
+              ethIn: res.amountIn.toString(), tokensOut: got.toString(), ts: Date.now(), venue: 'v4'
+            });
+          } catch (e) { this.log('warn', `Could not journal the fill: ${e.message}`); }
+          this.disarm();
+        } else {
+          this.log('error', `v4 buy reverted (${res.hash}). Still armed.`);
+          this.fired = false;
+        }
+        return;
       }
 
       // Virtuals bonding-stage buy: single tx, paid in pre-funded VIRTUAL.

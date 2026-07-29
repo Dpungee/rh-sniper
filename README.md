@@ -156,6 +156,7 @@ Known launchpads (`config.json → launchpads`), found by tallying live launch t
 | Key | Launchpad | Share of live sample |
 | --- | --- | --- |
 | `pons` | **Pons** (`PonsLaunchFactory`) — confirmed | ~76% |
+| `letscash` | **letscash.fun** — confirmed (Uniswap **v4**) | v4 venue |
 | `padB` | Launchpad B (`0x1fae…4ecb`, selector `0x026f2bf0`) — brand unconfirmed | ~18% |
 | `padC` | Launchpad C (`deployToken`) — brand unconfirmed | low |
 | `padD` | Launchpad D (`newTokenV6`) — brand unconfirmed | low |
@@ -207,10 +208,18 @@ upstream's `…d0bae`). Code that watches for liquidity must use the fork's topi
 
 ## Virtuals launchpad + TAX WATCH
 
-The sniper watches **two venues** while armed:
+The sniper watches **three venues** while armed:
 
 1. **Uniswap v3** — classic new-pool detection (as before).
-2. **The Virtuals Protocol launchpad** (BondingV5 on Robinhood Chain, watched by default;
+2. **Uniswap v4** (`--no-v4` to disable). v4 pools live inside a singleton `PoolManager`
+   and never emit `PoolCreated` on the v3 factory, so they need their own listener on the
+   PoolManager's `Initialize` event — without it these launches are entirely invisible.
+   **letscash.fun launches here**: its factory deploys the token, creates and seeds the v4
+   pool and locks liquidity in one transaction, with a hook that takes fees in ETH.
+   v4 pools trade **native ETH** (no WETH wrapping) and are bought via the UniversalRouter
+   `V4_SWAP` command. Note: v4 has no v3 quoter, so the honeypot gate and slippage ladder
+   don't apply — v4 buys go out with min-out 0 and the log says so.
+3. **The Virtuals Protocol launchpad** (BondingV5 on Robinhood Chain, watched by default;
    `--no-virtuals` / config `virtuals.enabled` to disable). Agent launches are detected at
    `PreLaunched` (announced in the log) and bought the moment `Launched` opens trading.
    Bonding-stage buys are paid in VIRTUAL, so the bot converts your ETH budget to VIRTUAL

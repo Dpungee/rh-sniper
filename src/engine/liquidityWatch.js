@@ -53,10 +53,11 @@ export async function inspectLaunchTx(publicClient, txHash) {
     return {
       minted: (rec.logs || []).some((l) => l.topics?.[0] === MINT_TOPIC),
       launchpad: rec.to ? rec.to.toLowerCase() : null,
-      addresses: [...addresses]
+      addresses: [...addresses],
+      logs: rec.logs || [] // callers (e.g. v4) may need other liquidity proofs
     };
   } catch {
-    return { minted: false, launchpad: null, addresses: [] };
+    return { minted: false, launchpad: null, addresses: [], logs: [] };
   }
 }
 
@@ -106,6 +107,14 @@ export async function waitForLiquidity({ httpClient, wsClient }, cfg, pool, { lo
   // Checking only liquidity() would stall an atomic snipe for seconds while the
   // RPC catches up, which on an FCFS chain is the whole race.
   if (launchInfo?.minted) return { ready: true, reason: 'LP minted in the launch tx' };
+
+  // Uniswap v4 pools have no per-pool contract — `pool` is a bytes32 poolId, so
+  // there is nothing to call liquidity() on. If the launch tx didn't prove
+  // liquidity above, say so rather than polling an address that doesn't exist.
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(pool))) {
+    return { ready: true, reason: 'v4 pool — liquidity not pre-verifiable (proceeding)' };
+  }
+
   if (await poolHasLiquidity(httpClient, pool)) return { ready: true, reason: 'pool already funded' };
 
   const lw = cfg.liquidityWatch || {};
