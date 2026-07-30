@@ -70,9 +70,14 @@ export async function getPortfolio(publicClient, cfg, address) {
   ]);
 
   // Cost basis + fee-tier hints per token, from the fill journal.
-  const cost = new Map(); // token -> { ethIn: bigint, symbol, feeTier, fills }
+  const cost = new Map();     // token -> { ethIn, symbol, feeTier, fills }
+  const realised = new Map(); // token -> ETH actually taken back out via sells
   for (const t of trades) {
     const k = t.token.toLowerCase();
+    if (t.kind === 'sell') {
+      realised.set(k, (realised.get(k) ?? 0n) + BigInt(t.ethOut || '0'));
+      continue; // proceeds are realised PNL, never cost basis
+    }
     const c = cost.get(k) || { ethIn: 0n, symbol: t.symbol, feeTier: t.feeTier, fills: 0 };
     c.ethIn += BigInt(t.ethIn);
     c.fills += 1;
@@ -106,7 +111,9 @@ export async function getPortfolio(publicClient, cfg, address) {
       pnlPct: valueWei !== null && costWei !== null && costWei > 0n
         ? Number(((valueWei - costWei) * 10000n) / costWei) / 100
         : null,
-      fills: basis?.fills ?? 0
+      fills: basis?.fills ?? 0,
+      feeTier: basis?.feeTier ?? null,      // reuse the pool we actually bought through
+      realisedEth: Number(formatEther(realised.get(k) ?? 0n))
     };
   }));
 
@@ -117,6 +124,8 @@ export async function getPortfolio(publicClient, cfg, address) {
     if (h.costEth !== null && h.valueEth !== null) { s.costEth += h.costEth; s.pnlEth += h.pnlEth; }
     return s;
   }, { valueEth: 0, costEth: 0, pnlEth: 0 });
+  // Realised = ETH taken back out via sells, including tokens already fully exited.
+  totals.realisedEth = Number(formatEther([...realised.values()].reduce((a, b) => a + b, 0n)));
 
   return {
     address,

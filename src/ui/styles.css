@@ -65,7 +65,19 @@ button{cursor:pointer;border:none;border-radius:10px;font-weight:700;padding:12p
   font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px}
 .mini:hover{color:var(--text);border-color:var(--accent)}
 .pf-totals b{color:var(--text)}
-.pf-list{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow:auto}
+.pf-list{display:flex;flex-direction:column;gap:8px;max-height:230px;overflow:auto}
+.pf-pos{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;
+  display:flex;flex-direction:column;gap:6px}
+.pf-pos .pf-row{background:transparent;padding:0}
+.auto-lbl{font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-right:8px}
+.auto-lbl input{width:auto;accent-color:var(--accent);vertical-align:middle}
+.sell-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.sell-btn{background:#1b2027;border:1px solid var(--line);color:var(--text);
+  font-size:11px;font-weight:700;padding:6px 0;border-radius:6px}
+.sell-btn:hover{border-color:var(--accent);color:var(--accent)}
+.sell-btn.sell-all{border-color:#3a2226;color:var(--danger)}
+.sell-btn.sell-all:hover{background:#241417;border-color:var(--danger)}
+.sell-btn:disabled{opacity:.5}
 .pf-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:baseline;
   font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12px;
   padding:4px 8px;background:var(--card2);border-radius:6px}

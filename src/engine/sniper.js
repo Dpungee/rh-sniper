@@ -12,13 +12,15 @@ import { targetMatches, normalizeTarget, describeTarget, isAddressTarget } from 
 import { passesSafety } from './safety.js';
 import { buildAndSendBuy } from './swap.js';
 import { buildAndSendBuyUniversal } from './swapUniversal.js';
-import { recordFill, tokensReceived } from './trades.js';
+import { recordFill, recordSale, tokensReceived } from './trades.js';
 import { startVirtualsListener, prepVirtualFunding, buildAndSendBondingBuy } from './virtuals.js';
 import { startV4Listener, buildAndSendBuyV4, liquidityAddedInLogs } from './v4.js';
 import { waitForLowTax } from './taxWatch.js';
 import { waitForLiquidity, inspectLaunchTx, matchesLaunchpad, parseLaunchpads, launchpadLabel } from './liquidityWatch.js';
 import { formatEther, parseEther, getContract } from 'viem';
 import { UNIV3_FACTORY_ABI, ERC20_ABI } from './abis.js';
+import { existingPools, bestBuyPool } from './router.js';
+import { sellPercent } from './sell.js';
 
 // A pending (armed) snipe is persisted here so that if the app is closed or the
 // machine restarts mid-watch, unlocking the wallet automatically resumes it.
@@ -175,15 +177,50 @@ export class Sniper extends EventEmitter {
   async findExistingPool(token) {
     const factory = this.cfg.dex.factory;
     if (!factory || /^0x0+$/.test(factory)) return null;
-    const f = getContract({ address: factory, abi: UNIV3_FACTORY_ABI, client: this.httpClient });
-    const tiers = [10000, 3000, 500, 100];
-    for (const fee of tiers) {
-      try {
-        const pool = await f.read.getPool([token, this.cfg.chain.wrappedNative, fee]);
-        if (pool && !/^0x0+$/.test(pool)) return { pool, feeTier: fee };
-      } catch { /* try next tier */ }
+    const pools = await existingPools(this.httpClient, this.cfg, token);
+    if (!pools.length) return null;
+    // Don't just take the first tier that exists — quote them and take the one
+    // that actually pays best, so a thin/stale pool can't hijack the trade.
+    const amountEth = this.armed?.amountEth ?? this.cfg.defaults.amountEth;
+    const best = await bestBuyPool(this.httpClient, this.cfg, { token, amountEth, preferFee: pools[0].fee });
+    const chosen = pools.find((p) => p.fee === best.fee) || pools[0];
+    if (pools.length > 1) {
+      this.log('info', `Token has ${pools.length} pools (${pools.map((p) => p.fee).join(', ')}) — routing via ${chosen.fee} (${best.reason}).`);
     }
-    return null;
+    return { pool: chosen.pool, feeTier: chosen.fee };
+  }
+
+  // Sell a percentage of a held position back to native ETH. Independent of
+  // the armed/disarmed state — you can exit a position while hunting the next.
+  async sell({ token, percent, slippagePct, feeTier = null }) {
+    if (!this.account) throw new Error('Unlock a wallet first.');
+    this.log('info', `SELL ${percent}% of ${token.slice(0, 10)}… requested.`);
+    try {
+      const res = await sellPercent({
+        publicClient: this.httpClient,
+        walletClient: this.walletClient,
+        account: this.account,
+        cfg: this.cfg,
+        token,
+        percent,
+        slippagePct: slippagePct ?? this.cfg.defaults.slippagePct,
+        preferFee: feeTier,
+        maxFeePerGasGwei: this.cfg.defaults.maxFeePerGasGwei,
+        maxPriorityFeePerGasGwei: this.cfg.defaults.maxPriorityFeePerGasGwei,
+        log: (l, m) => this.log(l, m)
+      });
+      this.log('success', `SOLD ${percent}% — received ${formatEther(res.ethOut)} ETH. tx: ${res.hash}`,
+        { hash: res.hash, explorer: `${this.cfg.chain.explorer}/tx/${res.hash}` });
+      recordSale({
+        token, percent: Number(percent), soldRaw: res.soldRaw.toString(),
+        ethOut: res.ethOut.toString(), feeTier: res.feeTier, txHash: res.hash, ts: Date.now()
+      });
+      this.emit('sold', { token, percent, hash: res.hash, ethOut: res.ethOut.toString() });
+      return { hash: res.hash, ethOut: res.ethOut.toString() };
+    } catch (e) {
+      this.log('error', `Sell failed: ${e.shortMessage || e.message}`);
+      throw e;
+    }
   }
 
   disarm() {
@@ -383,6 +420,24 @@ export class Sniper extends EventEmitter {
         if (this.cfg.safety?.enabled) this.log('info', `Safety OK: ${gate.reason}`);
       }
 
+      // POOL CORRECTNESS: confirm we're routing through the pool that actually
+      // pays best, not just the tier the launch event happened to announce. At
+      // the launch moment nothing is quotable yet and this correctly falls back
+      // to the detected tier (which is by definition the launch pool). Skipped
+      // in raw mode, where the extra quoting round-trip costs speed.
+      let feeTier = t.feeTier;
+      if (!this.armed.rawMode) {
+        const route = await bestBuyPool(this.httpClient, this.cfg, {
+          token: t.token, amountEth: this.armed.amountEth, preferFee: t.feeTier
+        });
+        if (route.quoted && route.fee !== t.feeTier) {
+          this.log('info', `Pool check: routing via fee ${route.fee} instead of ${t.feeTier} — ${route.reason}.`);
+          feeTier = route.fee;
+        } else if (route.quoted) {
+          this.log('debug', `Pool check: fee ${feeTier} confirmed best.`);
+        }
+      }
+
       const useUniversal = (this.cfg.dex.executor || 'universal-router') === 'universal-router';
       const execFn = useUniversal ? buildAndSendBuyUniversal : buildAndSendBuy;
       this.log('debug', `executor: ${useUniversal ? 'UniversalRouter' : 'SwapRouter02'}`);
@@ -393,7 +448,7 @@ export class Sniper extends EventEmitter {
         account: this.account,
         cfg: this.cfg,
         tokenOut: t.token,
-        feeTier: t.feeTier,
+        feeTier,                       // verified best pool, not just the detected tier
         amountEth: this.armed.amountEth,
         slippagePct,
         maxFeePerGasGwei: this.armed.maxFeePerGasGwei,
@@ -451,7 +506,7 @@ export class Sniper extends EventEmitter {
           recordFill({
             token: t.token,
             symbol: t.symbol,
-            feeTier: t.feeTier,
+            feeTier,                   // the pool actually used
             txHash: res.hash,
             blockNumber: Number(receipt.blockNumber),
             ethIn: ethIn.toString(),

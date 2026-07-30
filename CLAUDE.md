@@ -74,6 +74,29 @@ buy clear the pending file; a transient send failure keeps it armed and keeps wa
   (amountOutMinimum=0, accept any price; saves the quoter RPC round-trip). Persists with
   pending.json. Calldata structure verified unchanged with minOut=0 (round-trip decode).
 
+## Pool routing (router.js) — "correct pool every time"
+- `bestPool()` quotes ALL v3 fee tiers for the trade and returns the highest-output tier;
+  `bestBuyPool` / `bestSellPool` are the direction-specific wrappers. Never pick "first
+  tier that exists" — that was the old findExistingPool bug and it can route through a
+  thin pool.
+- Fresh launches are unquotable, so bestPool falls back to `preferFee` (the tier from the
+  launch event) — correct, since that IS the launch pool. Fire-time verification is
+  skipped in rawMode (costs a quoting round-trip).
+- The tier actually used is passed to the executor AND written to the fill journal, so
+  sells reuse the same pool instead of re-guessing.
+
+## Selling (sell.js)
+- `sellPercent()`: approve (only if allowance short) -> SwapRouter02 exactInputSingle
+  token->WETH via bestSellPool -> WETH.withdraw() to native ETH. Verified end-to-end with
+  eth_simulateV1 against a live pool (all 3 steps OK).
+- SwapRouter02 + direct ERC20 approval is deliberate over UniversalRouter+Permit2: sells
+  aren't latency-critical and this avoids a second approval contract.
+- 100% sells the EXACT balance (not a percentage calc) so no dust is stranded. A percentage
+  that rounds to 0 throws rather than sending a no-op tx.
+- Unquotable (dying) pools sell with min-out 0 by design — that's when exiting matters most.
+- Sales append `kind:'sell'` records to trades.json; portfolio.js excludes them from cost
+  basis and reports them as `realisedEth`.
+
 ## Portfolio / PNL
 - `trades.js`: append-only fill journal at `~/.rh-sniper/trades.json`; `tokensReceived()`
   sums the receipt's Transfer logs to the buyer (handles fee-on-transfer). sniper.js

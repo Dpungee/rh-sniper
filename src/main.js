@@ -38,6 +38,7 @@ function ensureSniper() {
   sniper.on('log', (e) => send('log', e));
   sniper.on('state', (e) => send('state', e));
   sniper.on('fired', (e) => send('fired', { hash: e.hash, symbol: e.token.symbol }));
+  sniper.on('sold', (e) => send('sold', e));
   return sniper;
 }
 
@@ -88,6 +89,10 @@ ipcMain.handle('snipe:disarm', () => {
 
 ipcMain.handle('snipe:pending', () => {
   return { pending: ensureSniper().pendingSnipe() };
+});
+
+ipcMain.handle('position:sell', async (_e, { token, percent, slippagePct, feeTier }) => {
+  return ensureSniper().sell({ token, percent, slippagePct, feeTier });
 });
 
 ipcMain.handle('portfolio:get', async () => {

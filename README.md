@@ -116,15 +116,37 @@ What's left in **your** hands (not code):
   than a co-located bot.
 - **`dex.gasLimit`** must stay comfortably above a real swap (~200–300k); too low = out-of-gas.
 
-## Holdings & PNL
+## Correct pool, every time
+
+A token can have pools at several v3 fee tiers. Picking the first tier that happens to
+exist can route a trade through a thin or stale pool and get a much worse fill, so both
+buys and sells **quote every candidate tier and take the one that actually pays best**
+(`src/engine/router.js`).
+
+- At a **launch**, nothing is quotable yet — the check correctly falls back to the tier the
+  launch event announced, which is by definition the launch pool.
+- For an **already-live token** (CA mode), the tiers are quoted and the best one wins; if
+  several pools exist the log names the one chosen and why.
+- The tier actually traded through is written to the fill journal, so the **sell reuses the
+  same pool** rather than re-guessing.
+- Skipped in RAW MODE, where the extra quoting round-trip costs speed.
+
+## Positions, PNL & selling
 
 Every confirmed snipe is journaled (`~/.rh-sniper/trades.json`: ETH in, tokens actually
 received parsed from the receipt, tx, block). The portfolio view shows what the wallet
 holds, its live ETH value (each token quoted back to WETH via the QuoterV2), and
 unrealized PNL vs. what the sniper paid:
 
-- **In the app** — the "Holdings & PNL" panel (refresh button; auto-refreshes after a fill).
+- **In the app** — the **Positions & PNL** panel. Each open position shows balance, live ETH
+  value and unrealised PNL, with **`10%` `25%` `50%` `SELL ALL`** buttons underneath.
+  Selling asks for confirmation (with an ETH estimate), then approves if needed, swaps
+  through the best pool, and unwraps the proceeds to native ETH. It auto-refreshes every
+  20s while open (toggle with `auto`), after a fill, and after a sell.
 - **Terminal / VPS** — `npm run portfolio` (or `npm run portfolio -- 0xADDRESS` for any address).
+
+Realised PNL (ETH actually taken back out via sells) is tracked separately from unrealised,
+so a position you've partly exited reads honestly rather than looking like a loss.
 
 Notes: tokens with no liquidity path to WETH show as *unquotable* rather than 0. PNL only
 covers buys made by this sniper — manual trades and airdrops have no cost basis. Holdings

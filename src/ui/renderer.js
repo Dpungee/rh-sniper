@@ -121,33 +121,72 @@ $('disarmBtn')?.addEventListener('click', async ()=>{ await window.api.disarm();
 // ---- Holdings & PNL ----
 const fmt = (n, dp=6) => (n===null||n===undefined) ? '?' : (Number(n).toFixed(dp).replace(/\.?0+$/,'') || '0');
 
+const SELL_STEPS = [10, 25, 50, 100];
+let selling = false;
+
+async function doSell(h, pct, btn){
+  if (selling) return;
+  const label = pct === 100 ? 'ALL' : pct + '%';
+  const est = h.valueEth !== null ? ` (~${fmt(h.valueEth * pct/100, 5)} ETH)` : '';
+  if (!confirm(`Sell ${label} of $${h.symbol}${est}?\n\nThis sends a real transaction and cannot be undone.`)) return;
+  selling = true;
+  const old = btn.textContent; btn.textContent = '…'; btn.disabled = true;
+  try{
+    await window.api.sell(h.token, pct, undefined, h.feeTier ?? undefined);
+    // engine logs the result; refresh once it has settled
+    setTimeout(refreshPortfolio, 2500);
+  }catch(e){ alert('Sell failed: ' + (e?.message || e)); }
+  finally{ selling = false; btn.textContent = old; btn.disabled = false; }
+}
+
 async function refreshPortfolio(){
   const btn = $('pfBtn'); btn.disabled = true; btn.textContent = '…';
   try{
     const p = await window.api.portfolio();
     const t = p.totals;
     const pnlCls = t.pnlEth >= 0 ? 'pf-up' : 'pf-down';
+    const realised = t.realisedEth ? ` · realised <span class="pf-up">+${fmt(t.realisedEth,4)} ETH</span>` : '';
     $('pfTotals').innerHTML =
       `wallet <b>${fmt(p.ethBalance,4)} ETH</b> · tokens <b>${fmt(t.valueEth,4)} ETH</b>` +
-      (t.costEth ? ` · cost ${fmt(t.costEth,4)} · <span class="${pnlCls}">PNL ${t.pnlEth>=0?'+':''}${fmt(t.pnlEth,4)} ETH</span>` : '');
+      (t.costEth ? ` · cost ${fmt(t.costEth,4)} · <span class="${pnlCls}">unrealised ${t.pnlEth>=0?'+':''}${fmt(t.pnlEth,4)} ETH</span>` : '') +
+      realised;
     const list = $('pfList'); list.innerHTML = '';
-    if (!p.holdings.length){ list.innerHTML = '<div class="muted small">no token holdings</div>'; return; }
+    if (!p.holdings.length){ list.innerHTML = '<div class="muted small">no open positions</div>'; return; }
     for (const h of p.holdings){
       const row = document.createElement('div');
-      row.className = 'pf-row';
+      row.className = 'pf-pos';
       const val = h.valueEth===null ? '<span class="muted">unquotable</span>' : `${fmt(h.valueEth,4)} ETH`;
       const pnl = h.pnlEth===null ? '' :
-        `<span class="${h.pnlEth>=0?'pf-up':'pf-down'}">${h.pnlEth>=0?'+':''}${fmt(h.pnlEth,4)} (${h.pnlPct>=0?'+':''}${fmt(h.pnlPct,1)}%)</span>`;
-      row.innerHTML = `<a class="pf-sym" target="_blank" href="${p.explorer}/token/${h.token}">$${h.symbol}</a>` +
+        `<span class="${h.pnlEth>=0?'pf-up':'pf-down'}">${h.pnlEth>=0?'+':''}${fmt(h.pnlEth,4)} ETH (${h.pnlPct>=0?'+':''}${fmt(h.pnlPct,1)}%)</span>`;
+      const head = document.createElement('div');
+      head.className = 'pf-row';
+      head.innerHTML = `<a class="pf-sym" target="_blank" href="${p.explorer}/token/${h.token}">$${h.symbol}</a>` +
         `<span class="pf-bal muted">${h.balanceFmt>=1e6?h.balanceFmt.toExponential(2):fmt(h.balanceFmt,2)}</span>` +
         `<span class="pf-val">${val}</span><span class="pf-pnl">${pnl}</span>`;
+      row.appendChild(head);
+      // sell buttons — skip WETH (nothing to route) and dust
+      if (h.balanceFmt > 0 && h.symbol !== 'WETH'){
+        const bar = document.createElement('div');
+        bar.className = 'sell-bar';
+        for (const pct of SELL_STEPS){
+          const b = document.createElement('button');
+          b.className = 'sell-btn' + (pct===100?' sell-all':'');
+          b.textContent = pct===100 ? 'SELL ALL' : pct + '%';
+          b.addEventListener('click', ()=> doSell(h, pct, b));
+          bar.appendChild(b);
+        }
+        row.appendChild(bar);
+      }
       list.appendChild(row);
     }
   }catch(e){ $('pfTotals').textContent = e.message; }
   finally{ btn.disabled = false; btn.textContent = 'refresh'; }
 }
 $('pfBtn')?.addEventListener('click', refreshPortfolio);
-// Auto-refresh after a fill lands.
 window.api.onFired(()=> setTimeout(refreshPortfolio, 4000));
+window.api.onSold(()=> setTimeout(refreshPortfolio, 1500));
+
+// Live monitoring: poll while positions are open so PNL tracks the market.
+setInterval(()=>{ if ($('pfAuto')?.checked && !selling) refreshPortfolio(); }, 20000);
 
 init();

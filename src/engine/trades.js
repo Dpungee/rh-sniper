@@ -21,6 +21,16 @@ export function recordFill(trade) {
   return all.length;
 }
 
+// Record a sale against the journal so realised PNL can be separated from
+// unrealised. Sales are appended alongside fills; `kind` distinguishes them.
+export function recordSale(sale) {
+  const all = loadTrades();
+  all.push({ ...sale, kind: 'sell' });
+  fs.mkdirSync(path.dirname(TRADES_PATH), { recursive: true });
+  fs.writeFileSync(TRADES_PATH, JSON.stringify(all, null, 2), { mode: 0o600 });
+  return all.length;
+}
+
 // ERC20 Transfer(address,address,uint256) topic
 export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
