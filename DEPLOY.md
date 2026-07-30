@@ -19,25 +19,30 @@ N. Virginia / us-east** region:
 - Vultr / DigitalOcean — New York or Ashburn
 - Hetzner / Latitude.sh — Ashburn
 
-## 2. Install + clone
+## 2. Bootstrap (one command)
+
+SSH in and run:
 
 ```bash
-sudo apt update && sudo apt install -y git curl
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-git clone https://github.com/Dpungee/rh-sniper && cd rh-sniper
-npm install --omit=dev        # electron not needed headless
+curl -fsSL https://raw.githubusercontent.com/Dpungee/rh-sniper/main/scripts/bootstrap-vps.sh | bash
 ```
 
-## 3. Benchmark BEFORE committing to the region
+That installs Node, clones the repo, installs dependencies, and **runs the latency
+benchmark before anything is configured** — so you can judge the region and walk away if
+it's bad. It deliberately stops short of touching keys; it prints the remaining steps.
 
-```bash
-npm run latency
-```
+## 3. Judge the region from the benchmark
 
-Compare `p50` against your other candidates (home baseline was ~55 ms public / ~70 ms
-Alchemy). A good us-east box should be **well under 20 ms**. If it isn't, try another
-region — it's a 5-minute test. Keep the fastest box.
+The bootstrap ends with `npm run latency`. Compare `p50` against the **measured home
+baseline: ~43 ms (Alchemy) / ~47 ms (public RPC)**.
+
+A good us-east box should be **well under 20 ms**. If it isn't, destroy it and try another
+region — nothing is configured yet, so it costs you five minutes. Keep the fastest box.
+
+Why this matters: this chain's sequencer is **first-come-first-served with zero priority
+fees**, so gas cannot buy you position — network latency is the only lever. Measured
+locally, over 95% of the sniper's end-to-end time is RPC round-trips (signing is 0.7 ms),
+so the box's distance to the sequencer effectively *is* the bot's speed.
 
 ## 4. Configure
 
@@ -62,16 +67,30 @@ sudo systemctl enable rh-sniper
 ## 6. Arm a snipe
 
 ```bash
+# by exact contract address (preferred — cannot be spoofed by a copycat ticker)
+npm run snipe -- --arm-only --ticker 0xC05e8894bF585862b7Cf2e1363c46E7546d37139 --amount 0.01
+
+# or by ticker
 npm run snipe -- --arm-only --ticker PEPE --amount 0.01 --slippage 15
+
 sudo systemctl restart rh-sniper
 journalctl -u rh-sniper -f        # watch it live (Ctrl+C to stop watching)
 ```
 
-You should see `Armed for $PEPE ... Listening (live WS + polling)`. The service now
-listens until the token launches or you cancel — through crashes and reboots.
+You should see `Armed for CA 0x… (exact contract — immune to ticker spoofing)` or
+`Armed for $PEPE …`, followed by `Listening (live WS + polling)`. The service watches all
+three venues (Uniswap v3, Uniswap v4/letscash.fun, Virtuals) until the token launches or
+you cancel — through crashes and reboots.
 
-Flags work as usual: add `--raw` (ALL safety off) or `--no-smart` (fixed slippage)
-to the `--arm-only` line.
+Useful flags on the `--arm-only` line:
+
+| Flag | Effect |
+| --- | --- |
+| `--raw` | ALL safety off, min-out 0 — the fastest fire path (see the speed note above) |
+| `--no-smart` | fixed slippage instead of the escalating ladder |
+| `--no-tax-watch` | fire even while an anti-sniper launch tax is active |
+| `--pons` / `--launchpad pons,padB` | only accept launches from those launchpads |
+| `--no-v4` / `--no-virtuals` | ignore a venue |
 
 ## 7. Cancel / change a snipe
 
